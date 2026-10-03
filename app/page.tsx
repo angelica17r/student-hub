@@ -244,6 +244,7 @@ export default function App() {
   // Authentication & Profile State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [authError, setAuthError] = useState("");
   const [signupError, setSignupError] = useState("");
   const [usernameAvailability, setUsernameAvailability] = useState<"idle" | "checking" | "available" | "taken" | "error">("idle");
@@ -303,6 +304,25 @@ export default function App() {
     if (savedCourses) setCourses(JSON.parse(savedCourses));
     if (savedUsers) setRegisteredUsers(JSON.parse(savedUsers));
   }, []);
+
+  // Restore the locally remembered prototype account after registered users load.
+  useEffect(() => {
+    if (!mounted) return;
+    const rememberedEmail = localStorage.getItem("studysync_remembered_user");
+    if (!rememberedEmail) return;
+    const userRecord = registeredUsers[rememberedEmail];
+    if (!userRecord) {
+      localStorage.removeItem("studysync_remembered_user");
+      return;
+    }
+    setEmail(rememberedEmail);
+    setUsername(userRecord.username);
+    setPfp(userRecord.pfp);
+    setFriendCode(userRecord.friendCode);
+    if (rememberMe) localStorage.setItem("studysync_remembered_user", email.trim().toLowerCase());
+    else localStorage.removeItem("studysync_remembered_user");
+    navigate({ homeTab: "hub", screen: "home" });
+  }, [mounted, registeredUsers]);
 
   useEffect(() => {
     if (mounted) localStorage.setItem("studysync_tasks", JSON.stringify(tasks));
@@ -480,6 +500,12 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("studysync_remembered_user");
+    setPassword("");
+    navigate({ screen: "auth", homeTab: "hub" });
+  };
+
   // Handle Login validation
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -541,6 +567,7 @@ export default function App() {
 
     setUsername(cleanUsername);
     setRegisteredUsers(updatedUsers);
+    localStorage.setItem("studysync_remembered_user", email.trim().toLowerCase());
     navigate({ homeTab: "hub", screen: "home" });
   };
 
@@ -592,7 +619,7 @@ export default function App() {
       ]);
       const key = email.trim().toLowerCase();
       setRegisteredUsers((current) => { const next = { ...current }; delete next[key]; return next; });
-      for (const storageKey of ["studysync_tasks", "studysync_subjects", "studysync_courses", "studysync_notes"]) localStorage.removeItem(storageKey);
+      for (const storageKey of ["studysync_tasks", "studysync_subjects", "studysync_courses", "studysync_notes", "studysync_remembered_user"]) localStorage.removeItem(storageKey);
       setTasks([]); setSubjects([]); setCourses([]); setFriendProfiles([]); setIncomingRequests([]); setOutgoingRequests([]);
       setActiveRoom(null); setUsername(""); setPfp(null); setPassword(""); setEmail("");
       setFriendCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -1505,6 +1532,15 @@ export default function App() {
                 }`}
               />
 
+              <label className={`flex items-center gap-2 text-xs cursor-pointer select-none ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded accent-[#9b6aa8]"
+                />
+                Keep me logged in on this device
+              </label>
               <button
                 type="submit"
                 className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-indigo-600/30 mt-2"
@@ -1534,7 +1570,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <button 
                 type="button"
-                onClick={() => navigate({ screen: "auth" })}
+                onClick={handleLogout}
                 className={`p-2 rounded-xl border ${darkMode ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-100"}`}
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -1682,7 +1718,7 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => navigate({ screen: "auth" })}
+                onClick={handleLogout}
                 className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
                 title="Logout"
               >
