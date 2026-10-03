@@ -353,6 +353,7 @@ export default function App() {
 
   // --- POMODORO TIMER ---
   const [timeLeft, setTimeLeft] = useState(1500);
+  const [timerDuration, setTimerDuration] = useState(1500);
   const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
@@ -376,13 +377,361 @@ export default function App() {
   if (!mounted) return null;
 
   return (
-    <div className={`min-h-screen flex items-center justify-center font-sans transition-colors duration-300 p-4 ${
-      darkMode ? "bg-slate-950 text-slate-100" : "bg-slate-100 text-slate-900"
-    }`}>
-      <div className={`w-full max-w-md min-h-[720px] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300 ${
-        darkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-      }`}>
-        
+    <div className={`study-sync-shell min-h-screen flex items-center justify-center font-sans transition-colors duration-300 p-4 ${darkMode ? "bg-[#101735] text-slate-100" : "bg-[#ead39d] text-slate-900"}`}>
+      <style>{`
+        .study-sync-scene {
+          --ink: #f2f0ff;
+          --muted: #bab7d5;
+          --panel: rgba(25, 27, 78, .96);
+          --surface: rgba(13, 17, 54, .82);
+          --surface-raised: rgba(37, 42, 105, .92);
+          --line: rgba(165, 157, 255, .36);
+          --input: rgba(9, 13, 43, .9);
+          --accent: #a99cff;
+          --pixel-shadow: #111338;
+          position: relative;
+          isolation: isolate;
+          overflow: hidden;
+          color: var(--ink);
+          background: #111638;
+        }
+        .study-sync-scene::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          inset: 0;
+          pointer-events: none;
+          background-color: #101735;
+          background-image:
+            radial-gradient(circle, #f9f1c5 0 1px, transparent 1.8px),
+            radial-gradient(circle, #c6c1ff 0 1px, transparent 1.8px),
+            linear-gradient(180deg, transparent 0 68%, rgba(29, 39, 83, .25) 68% 100%),
+            linear-gradient(180deg, #111735 0%, #20245a 66%, #34366f 100%);
+          background-size: 79px 73px, 113px 97px, 100% 100%, 100% 100%;
+          background-position: 8px 14px, 33px 20px, center, center;
+        }
+        .study-sync-scene::after {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: 8%;
+          right: 13%;
+          width: 12px;
+          height: 12px;
+          background: #f7e8aa;
+          box-shadow: 12px 0 #f7e8aa, 24px 0 #f7e8aa, 36px 0 #f7e8aa,
+            0 12px #f7e8aa, 12px 12px #f7e8aa, 24px 12px #f7e8aa, 36px 12px #f7e8aa, 48px 12px #f7e8aa,
+            0 24px #f7e8aa, 12px 24px #f7e8aa, 24px 24px #e8d78f, 36px 24px #f7e8aa, 48px 24px #f7e8aa,
+            12px 36px #f7e8aa, 24px 36px #f7e8aa, 36px 36px #f7e8aa, 48px 36px #f7e8aa,
+            24px 48px #f7e8aa, 36px 48px #f7e8aa;
+          opacity: .92;
+          pointer-events: none;
+        }
+        .study-sync-panel {
+          color: var(--ink);
+          background: var(--panel);
+          border-color: var(--line);
+          box-shadow: 0 0 0 4px rgba(9, 13, 36, .42), 0 18px 0 var(--pixel-shadow), 0 30px 60px rgba(0,0,0,.32);
+          background: transparent;
+          backdrop-filter: none;
+        }
+        .study-sync-scene button { border-radius: 7px; image-rendering: pixelated; transition: transform .16s ease, filter .16s ease, background-color .16s ease; }
+        .study-sync-scene button:hover { filter: brightness(1.08); }
+        .study-sync-scene button:active { transform: translateY(2px); }
+        .study-sync-scene input { color: var(--ink); border-color: var(--line); }
+        .study-sync-scene input::placeholder { color: var(--muted); opacity: .8; }
+        .theme-night .bg-slate-950 { background-color: var(--surface) !important; }
+        .theme-night .bg-slate-900 { background-color: rgba(17, 21, 61, .92) !important; }
+        .theme-night .bg-slate-800 { background-color: var(--surface-raised) !important; }
+        .theme-night .border-slate-800, .theme-night .border-slate-700 { border-color: var(--line) !important; }
+        .theme-night .text-slate-100, .theme-night .text-slate-200 { color: var(--ink) !important; }
+        .theme-night .text-slate-400, .theme-night .text-slate-500 { color: var(--muted) !important; }
+        .theme-night input.bg-slate-950, .theme-night input.bg-slate-900 { background-color: var(--input) !important; }
+        .theme-day {
+          --ink: #49351f;
+          --muted: #806d57;
+          --panel: rgba(255, 248, 225, .96);
+          --surface: rgba(255, 251, 235, .96);
+          --surface-raised: #f3e5c5;
+          --line: rgba(144, 105, 55, .30);
+          --input: #fffdf5;
+          --accent: #b86a37;
+          --pixel-shadow: #bd9860;
+          background: #f2c66d;
+        }
+        .theme-day::before {
+          background-color: #f5ce79;
+          background-image:
+            linear-gradient(180deg, transparent 0 60%, rgba(255, 243, 194, .25) 60% 100%),
+            linear-gradient(180deg, transparent 0 69%, #9cc078 69% 100%),
+            linear-gradient(180deg, transparent 0 78%, #71945e 78% 100%),
+            radial-gradient(circle, #fff9da 0 2px, transparent 2.8px),
+            linear-gradient(180deg, #f4ce7b 0%, #f8df9a 64%, #abc87c 100%);
+          background-size: 100% 100%, 100% 100%, 100% 100%, 91px 83px, 100% 100%;
+          background-position: center;
+        }
+        .theme-day::after {
+          background: #fff1a8;
+          box-shadow: 12px 0 #fff1a8, 24px 0 #fff1a8, 36px 0 #fff1a8,
+            0 12px #fff1a8, 12px 12px #fff1a8, 24px 12px #fff1a8, 36px 12px #fff1a8, 48px 12px #fff1a8,
+            0 24px #fff1a8, 12px 24px #fff1a8, 24px 24px #ffe889, 36px 24px #fff1a8, 48px 24px #fff1a8,
+            12px 36px #fff1a8, 24px 36px #fff1a8, 36px 36px #fff1a8, 48px 36px #fff1a8,
+            24px 48px #fff1a8, 36px 48px #fff1a8;
+        }
+        .theme-day .study-sync-panel { background: transparent; border-color: #b58a51; box-shadow: 0 0 0 4px rgba(255, 248, 225, .8), 0 18px 0 var(--pixel-shadow), 0 30px 60px rgba(102, 71, 34, .2); }
+        .theme-day .bg-slate-950, .theme-day .bg-slate-900, .theme-day .bg-slate-800 { background-color: var(--surface) !important; }
+        .theme-day .bg-slate-50 { background-color: #fff9e9 !important; }
+        .theme-day .bg-white { background-color: #fffdf5 !important; }
+        .theme-day .border-slate-800, .theme-day .border-slate-700, .theme-day .border-slate-200, .theme-day .border-slate-300 { border-color: var(--line) !important; }
+        .theme-day .text-white, .theme-day .text-slate-100, .theme-day .text-slate-200, .theme-day .text-slate-300, .theme-day .text-slate-400, .theme-day .text-slate-500, .theme-day .text-slate-600, .theme-day .text-slate-700, .theme-day .text-slate-800, .theme-day .text-slate-900 { color: var(--ink) !important; }
+        .theme-day button.bg-indigo-600, .theme-day button.bg-indigo-600 *, .theme-day button.bg-emerald-600, .theme-day button.bg-emerald-600 *, .theme-day button.bg-teal-600, .theme-day button.bg-teal-600 *, .theme-day button.bg-amber-600, .theme-day button.bg-amber-600 *, .theme-day button.bg-rose-600, .theme-day button.bg-rose-600 * { color: #fff !important; }
+        .theme-day input.bg-slate-950, .theme-day input.bg-slate-900 { background-color: var(--input) !important; }
+        .theme-day .bg-indigo-950, .theme-day .bg-emerald-950, .theme-day .bg-rose-950, .theme-day .bg-amber-950 { background-color: #f4e6c8 !important; }
+        .theme-day .text-indigo-300, .theme-day .text-indigo-400, .theme-day .text-indigo-500 { color: #7255a6 !important; }
+        .theme-day .text-emerald-300, .theme-day .text-emerald-400 { color: #397b50 !important; }
+        .theme-day .text-amber-300, .theme-day .text-amber-400 { color: #9a621f !important; }
+        .theme-day .text-rose-300, .theme-day .text-rose-400 { color: #a84848 !important; }
+        .theme-day .study-sync-panel .flex-1.overflow-y-auto { scrollbar-color: #c39b62 transparent; }
+        @media (max-width: 480px) {
+          .study-sync-shell { align-items: flex-start; padding: 12px !important; }
+          .study-sync-panel { min-height: calc(100vh - 24px) !important; }
+          .study-sync-scene::after { right: 9%; top: 5%; transform: scale(.8); transform-origin: top right; }
+        }
+        /* Reference-inspired color and surface pass: twilight plum + warm blush */
+        .study-sync-scene button { border-radius: 999px; }
+        .study-sync-scene.theme-night {
+          --ink: #fbe4d8;
+          --muted: #d1b7cf;
+          --panel: rgba(43, 18, 76, .97);
+          --surface: rgba(82, 43, 91, .82);
+          --surface-raised: rgba(134, 79, 108, .62);
+          --line: rgba(223, 182, 210, .24);
+          --input: rgba(25, 0, 25, .72);
+          --accent: #dfb6d2;
+          --pixel-shadow: #190019;
+          background: #190019;
+        }
+        .study-sync-scene.theme-night::before {
+          background-color: #190019;
+          background-image:
+            radial-gradient(circle at 15% 18%, rgba(251,228,216,.95) 0 1px, transparent 2px),
+            radial-gradient(circle at 78% 13%, rgba(223,182,210,.9) 0 1px, transparent 2px),
+            radial-gradient(circle at 54% 31%, rgba(251,228,216,.72) 0 1px, transparent 2px),
+            radial-gradient(circle at 88% 48%, rgba(223,182,210,.84) 0 1px, transparent 2px),
+            radial-gradient(circle at 22% 65%, rgba(251,228,216,.82) 0 1px, transparent 2px),
+            radial-gradient(circle at 69% 79%, rgba(223,182,210,.75) 0 1px, transparent 2px),
+            radial-gradient(ellipse at 50% 100%, rgba(134,79,108,.85), transparent 48%),
+            linear-gradient(160deg, #2b124c 0%, #351748 54%, #190019 100%);
+          background-size: 100% 100%;
+          background-position: center;
+        }
+        .study-sync-scene.theme-night::after {
+          width: 12px; height: 12px; top: 8%; right: 13%;
+          background: #fbe4d8;
+          box-shadow: 12px 0 #fbe4d8, 24px 0 #fbe4d8, 36px 0 #fbe4d8,
+            0 12px #fbe4d8, 12px 12px #fbe4d8, 24px 12px #dfb6d2, 36px 12px #fbe4d8, 48px 12px #fbe4d8,
+            0 24px #fbe4d8, 12px 24px #fbe4d8, 24px 24px #dfb6d2, 36px 24px #fbe4d8, 48px 24px #fbe4d8,
+            12px 36px #fbe4d8, 24px 36px #fbe4d8, 36px 36px #fbe4d8, 48px 36px #fbe4d8,
+            24px 48px #fbe4d8, 36px 48px #fbe4d8;
+          opacity: .72;
+        }
+        .theme-night .study-sync-panel {
+          background: linear-gradient(160deg, rgba(43,18,76,.91), rgba(25,0,25,.92));
+          border-color: rgba(223,182,210,.35);
+          box-shadow: 0 0 0 4px rgba(25,0,25,.25), 0 18px 0 #190019, 0 30px 60px rgba(25,0,25,.42);
+        }
+        .theme-night .bg-slate-950, .theme-night .bg-slate-900, .theme-night .bg-slate-800 {
+          background-color: rgba(82,43,91,.72) !important;
+        }
+        .theme-night .border-slate-800, .theme-night .border-slate-700 { border-color: rgba(223,182,210,.25) !important; }
+        .theme-night .text-indigo-300, .theme-night .text-indigo-400 { color: #dfb6d2 !important; }
+        .theme-night button.bg-indigo-600, .theme-night button.bg-emerald-600, .theme-night button.bg-teal-600, .theme-night button.bg-amber-600 {
+          box-shadow: 0 4px 0 rgba(25,0,25,.38), 0 8px 18px rgba(25,0,25,.2);
+        }
+        .study-sync-scene.theme-day {
+          --ink: #39283f;
+          --muted: #755b72;
+          --panel: rgba(255,244,236,.97);
+          --surface: rgba(255,228,216,.90);
+          --surface-raised: rgba(223,182,210,.42);
+          --line: rgba(82,43,91,.2);
+          --input: rgba(255,250,246,.96);
+          --accent: #864f6c;
+          --pixel-shadow: #d6acaa;
+          background: #fbe4d8;
+        }
+        .study-sync-scene.theme-day::before {
+          background-color: #fbe4d8;
+          background-image:
+            radial-gradient(circle at 16% 15%, rgba(255,255,255,.85) 0 1px, transparent 2px),
+            radial-gradient(circle at 83% 19%, rgba(134,79,108,.32) 0 1px, transparent 2px),
+            radial-gradient(circle at 60% 44%, rgba(255,255,255,.7) 0 1px, transparent 2px),
+            radial-gradient(ellipse at 50% 100%, rgba(223,182,210,.7), transparent 48%),
+            linear-gradient(155deg, #dfb6b2 0%, #fbe4d8 48%, #fff1e7 100%);
+          background-size: 100% 100%;
+          background-position: center;
+        }
+        .study-sync-scene.theme-day::after {
+          background: #fff5ea;
+          box-shadow: 12px 0 #fff5ea, 24px 0 #fff5ea, 36px 0 #fff5ea,
+            0 12px #fff5ea, 12px 12px #fff5ea, 24px 12px #dfb6b2, 36px 12px #fff5ea, 48px 12px #fff5ea,
+            0 24px #fff5ea, 12px 24px #fff5ea, 24px 24px #dfb6b2, 36px 24px #fff5ea, 48px 24px #fff5ea,
+            12px 36px #fff5ea, 24px 36px #fff5ea, 36px 36px #fff5ea, 48px 36px #fff5ea,
+            24px 48px #fff5ea, 36px 48px #fff5ea;
+          opacity: .85;
+        }
+        .theme-day .study-sync-panel {
+          background: linear-gradient(155deg, rgba(255,244,236,.94), rgba(251,228,216,.92));
+          border-color: rgba(134,79,108,.38);
+          box-shadow: 0 0 0 4px rgba(255,244,236,.48), 0 18px 0 #d6acaa, 0 30px 60px rgba(82,43,91,.16);
+        }
+        .theme-day .bg-slate-950, .theme-day .bg-slate-900, .theme-day .bg-slate-800 {
+          background-color: rgba(255,228,216,.82) !important;
+        }
+        .theme-day .border-slate-800, .theme-day .border-slate-700, .theme-day .border-slate-200, .theme-day .border-slate-300 {
+          border-color: rgba(82,43,91,.2) !important;
+        }
+        .theme-day .text-indigo-300, .theme-day .text-indigo-400, .theme-day .text-indigo-500 { color: #522b5b !important; }
+        .theme-day button.bg-indigo-600, .theme-day button.bg-emerald-600, .theme-day button.bg-teal-600, .theme-day button.bg-amber-600 {
+          background-color: #522b5b !important;
+          box-shadow: 0 4px 0 rgba(82,43,91,.24), 0 8px 18px rgba(82,43,91,.12);
+        }
+        .theme-day button.bg-indigo-600:hover, .theme-day button.bg-emerald-600:hover, .theme-day button.bg-teal-600:hover, .theme-day button.bg-amber-600:hover { background-color: #68406d !important; }
+        .theme-day .bg-indigo-600:not(button), .theme-day .bg-emerald-600:not(button), .theme-day .bg-teal-600:not(button), .theme-day .bg-amber-600:not(button) { background-color: #864f6c !important; }
+        /* Make controls feel intentionally themed, not just recolored */
+        .theme-night button:not([aria-label="Toggle Theme"]) {
+          border-radius: 999px !important;
+          background-color: #522b5b !important;
+          color: #fbe4d8 !important;
+          border: 1px solid rgba(223,182,210,.45) !important;
+          box-shadow: 0 4px 0 rgba(25,0,25,.62), 0 7px 14px rgba(25,0,25,.24);
+          font-weight: 700;
+        }
+        .theme-night button:not([aria-label="Toggle Theme"]):hover {
+          background-color: #70436f !important;
+          border-color: rgba(251,228,216,.7) !important;
+          transform: translateY(-1px);
+        }
+        .theme-night button:not([aria-label="Toggle Theme"]):active {
+          transform: translateY(3px);
+          box-shadow: 0 1px 0 rgba(25,0,25,.62);
+        }
+        .theme-night button.bg-indigo-600:not([aria-label="Toggle Theme"]),
+        .theme-night button.bg-emerald-600:not([aria-label="Toggle Theme"]),
+        .theme-night button.bg-teal-600:not([aria-label="Toggle Theme"]),
+        .theme-night button.bg-amber-600:not([aria-label="Toggle Theme"]) {
+          background: linear-gradient(180deg, #fbe4d8, #dfb6d2) !important;
+          border-color: rgba(251,228,216,.8) !important;
+          color: #2b124c !important;
+          box-shadow: 0 5px 0 #864f6c, 0 9px 18px rgba(25,0,25,.3);
+        }
+        .theme-night button.bg-indigo-600:not([aria-label="Toggle Theme"]):hover,
+        .theme-night button.bg-emerald-600:not([aria-label="Toggle Theme"]):hover,
+        .theme-night button.bg-teal-600:not([aria-label="Toggle Theme"]):hover,
+        .theme-night button.bg-amber-600:not([aria-label="Toggle Theme"]):hover {
+          background: linear-gradient(180deg, #fff1e7, #fbe4d8) !important;
+        }
+        .theme-day button:not([aria-label="Toggle Theme"]) {
+          border-radius: 999px !important;
+          background-color: #dfb6d2 !important;
+          color: #39283f !important;
+          border: 1px solid rgba(82,43,91,.22) !important;
+          box-shadow: 0 4px 0 rgba(134,79,108,.35), 0 7px 14px rgba(82,43,91,.12);
+          font-weight: 700;
+        }
+        .theme-day button:not([aria-label="Toggle Theme"]):hover {
+          background-color: #d4a5c5 !important;
+          border-color: rgba(82,43,91,.42) !important;
+          transform: translateY(-1px);
+        }
+        .theme-day button:not([aria-label="Toggle Theme"]):active {
+          transform: translateY(3px);
+          box-shadow: 0 1px 0 rgba(134,79,108,.35);
+        }
+        .theme-day button.bg-indigo-600:not([aria-label="Toggle Theme"]),
+        .theme-day button.bg-emerald-600:not([aria-label="Toggle Theme"]),
+        .theme-day button.bg-teal-600:not([aria-label="Toggle Theme"]),
+        .theme-day button.bg-amber-600:not([aria-label="Toggle Theme"]) {
+          background: linear-gradient(180deg, #522b5b, #2b124c) !important;
+          border-color: rgba(82,43,91,.64) !important;
+          color: #fbe4d8 !important;
+          box-shadow: 0 5px 0 #190019, 0 9px 18px rgba(82,43,91,.2);
+        }
+        .theme-day button.bg-indigo-600:not([aria-label="Toggle Theme"]):hover,
+        .theme-day button.bg-emerald-600:not([aria-label="Toggle Theme"]):hover,
+        .theme-day button.bg-teal-600:not([aria-label="Toggle Theme"]):hover,
+        .theme-day button.bg-amber-600:not([aria-label="Toggle Theme"]):hover {
+          background: linear-gradient(180deg, #68406d, #522b5b) !important;
+        }
+        .study-sync-scene button[aria-label="Toggle Theme"] {
+          border-radius: 999px !important;
+          border: 1px solid var(--line) !important;
+          box-shadow: 0 3px 0 var(--pixel-shadow);
+        }
+        .study-sync-scene button.attendance-attended,
+        .theme-day.study-sync-scene button.attendance-attended,
+        .theme-night.study-sync-scene button.attendance-attended {
+          background: #65752b !important;
+          border: 1px solid #879544 !important;
+          color: #f6f2da !important;
+          box-shadow: 0 4px 0 #414b1b, 0 7px 12px rgba(0,0,0,.2) !important;
+        }
+        .study-sync-scene button.attendance-attended:hover { background: #788938 !important; }
+        .study-sync-scene button.attendance-missed,
+        .theme-day.study-sync-scene button.attendance-missed,
+        .theme-night.study-sync-scene button.attendance-missed {
+          background: #741f32 !important;
+          border: 1px solid #a64252 !important;
+          color: #ffe8e5 !important;
+          box-shadow: 0 4px 0 #49121f, 0 7px 12px rgba(0,0,0,.2) !important;
+        }
+        .study-sync-scene button.attendance-missed:hover { background: #8c2a3f !important; }
+        .study-sync-scene .study-nav-card {
+          border-radius: 20px !important;
+          border-width: 1px !important;
+          background: linear-gradient(135deg, rgba(82,43,91,.88), rgba(43,18,76,.96)) !important;
+          border-color: rgba(223,182,210,.34) !important;
+          box-shadow: 0 6px 0 rgba(25,0,25,.52), 0 12px 24px rgba(25,0,25,.2);
+          color: #fbe4d8 !important;
+        }
+        .theme-day .study-sync-scene .study-nav-card {
+          background: linear-gradient(135deg, rgba(255,244,236,.98), rgba(223,182,210,.76)) !important;
+          border-color: rgba(134,79,108,.3) !important;
+          box-shadow: 0 6px 0 rgba(134,79,108,.2), 0 12px 22px rgba(82,43,91,.12);
+          color: #39283f !important;
+        }
+        .study-sync-scene .study-nav-card:hover { transform: translateY(-2px) scale(1.01); }
+        .study-sync-scene .study-nav-card .p-3 { border-radius: 14px !important; }
+        .theme-night.study-sync-scene .study-nav-card .p-3 { background: #864f6c !important; box-shadow: inset 0 1px rgba(251,228,216,.25); }
+        .theme-day.study-sync-scene .study-nav-card .p-3 { background: #522b5b !important; box-shadow: 0 3px 0 rgba(25,0,25,.18); }
+        .theme-day.study-sync-scene .study-nav-card .p-3, .theme-day.study-sync-scene .study-nav-card .p-3 * { color: #fbe4d8 !important; }
+        .study-sync-scene .timer-preset {
+          border: 1px solid rgba(223,182,210,.38) !important;
+          background: rgba(82,43,91,.76) !important;
+          color: #fbe4d8 !important;
+          box-shadow: 0 3px 0 rgba(25,0,25,.45) !important;
+        }
+        .theme-day.study-sync-scene .timer-preset {
+          background: rgba(223,182,210,.55) !important;
+          color: #39283f !important;
+          border-color: rgba(82,43,91,.2) !important;
+          box-shadow: 0 3px 0 rgba(134,79,108,.2) !important;
+        }
+        .study-sync-scene .timer-preset-active {
+          background: #fbe4d8 !important;
+          color: #2b124c !important;
+          border-color: #dfb6d2 !important;
+        }
+        .theme-day.study-sync-scene .timer-preset-active {
+          background: #522b5b !important;
+          color: #fbe4d8 !important;
+          border-color: #522b5b !important;
+        }
+        .study-sync-scene .timer-preset:disabled { opacity: .65; cursor: not-allowed; }
+      `}</style>
+      <div
+        className={`study-sync-scene theme-${darkMode ? "night" : "day"} study-sync-panel w-full max-w-md min-h-[720px] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300`}
+      >
         {/* Global Dark/Light Mode Toggle */}
         <button
           onClick={() => setDarkMode(!darkMode)}
@@ -624,7 +973,7 @@ export default function App() {
                 {/* Bubble 1: Chat */}
                 <div 
                   onClick={() => setHomeTab("chat")}
-                  className={`group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
+                  className={`study-nav-card nav-chat group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
                     darkMode 
                       ? "bg-slate-950/60 border-indigo-500/20 hover:border-indigo-500/50 hover:bg-indigo-950/20" 
                       : "bg-indigo-50/50 border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50"
@@ -647,7 +996,7 @@ export default function App() {
                 {/* Bubble 2: Academics */}
                 <div 
                   onClick={() => setHomeTab("academics")}
-                  className={`group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
+                  className={`study-nav-card nav-academics group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
                     darkMode 
                       ? "bg-slate-950/60 border-emerald-500/20 hover:border-emerald-500/50 hover:bg-emerald-950/20" 
                       : "bg-emerald-50/50 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-50"
@@ -670,7 +1019,7 @@ export default function App() {
                 {/* Bubble 3: Account */}
                 <div 
                   onClick={() => setHomeTab("account")}
-                  className={`group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
+                  className={`study-nav-card nav-account group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
                     darkMode 
                       ? "bg-slate-950/60 border-amber-500/20 hover:border-amber-500/50 hover:bg-amber-950/20" 
                       : "bg-amber-50/50 border-amber-200 hover:border-amber-300 hover:bg-amber-50"
@@ -820,6 +1169,30 @@ export default function App() {
 
                   {academicsSubTab === "pomodoro" && (
                     <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                      <div className="w-full text-center space-y-2">
+                        <p className={`text-xs font-semibold ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Choose a focus session</p>
+                        <div className="flex justify-center gap-2">
+                          {[15, 25, 45].map((minutes) => {
+                            const seconds = minutes * 60;
+                            const selected = timerDuration === seconds;
+                            return (
+                              <button
+                                key={minutes}
+                                onClick={() => {
+                                  setTimerDuration(seconds);
+                                  if (!isRunning) setTimeLeft(seconds);
+                                }}
+                                className={`timer-preset px-4 py-2 text-xs font-bold ${selected ? "timer-preset-active" : ""}`}
+                                aria-pressed={selected}
+                                disabled={isRunning}
+                                title={isRunning ? "Pause or reset to change session length" : `Set ${minutes} minute session`}
+                              >
+                                {minutes} min
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                       <div className="w-44 h-44 rounded-full border-4 border-indigo-500/30 flex items-center justify-center bg-slate-950">
                         <span className="text-4xl font-black font-mono text-white">{formatTime(timeLeft)}</span>
                       </div>
@@ -831,7 +1204,7 @@ export default function App() {
                           {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                           <span className="text-xs">{isRunning ? "Pause" : "Start"}</span>
                         </button>
-                        <button onClick={() => { setIsRunning(false); setTimeLeft(1500); }} className="p-3 bg-slate-800 text-slate-400 rounded-xl border border-slate-700">
+                        <button onClick={() => { setIsRunning(false); setTimeLeft(timerDuration); }} className="p-3 bg-slate-800 text-slate-400 rounded-xl border border-slate-700">
                           <RotateCcw className="w-4 h-4" />
                         </button>
                       </div>
@@ -861,8 +1234,8 @@ export default function App() {
                                 <span className={`text-xs font-black px-2 py-0.5 rounded ${pct >= 75 ? "bg-emerald-950 text-emerald-400" : "bg-rose-950 text-rose-400"}`}>{pct.toFixed(1)}%</span>
                               </div>
                               <div className="flex gap-2">
-                                <button onClick={() => markAttendance(sub.id, 1, 1)} className="flex-1 py-1 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded-lg text-[10px] font-semibold">+ Attended</button>
-                                <button onClick={() => markAttendance(sub.id, 0, 1)} className="flex-1 py-1 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded-lg text-[10px] font-semibold">+ Bunked</button>
+                                <button onClick={() => markAttendance(sub.id, 1, 1)} className="attendance-attended flex-1 py-1 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded-lg text-[10px] font-semibold">+ Attended</button>
+                                <button onClick={() => markAttendance(sub.id, 0, 1)} className="attendance-missed flex-1 py-1 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded-lg text-[10px] font-semibold">+ Bunked</button>
                                 <button onClick={() => deleteSubject(sub.id)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
                               </div>
                             </div>
