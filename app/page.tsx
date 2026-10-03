@@ -58,7 +58,7 @@ interface StudyRoom {
 }
 
 interface FriendProfile { uid: string; username: string; friendCode: string; }
-interface FriendRequest { id: string; senderUid: string; receiverUid: string; senderName: string; senderCode: string; status: "pending" | "accepted"; }
+interface FriendRequest { receiverName: string; receiverCode: string; id: string; senderUid: string; receiverUid: string; senderName: string; senderCode: string; status: "pending" | "accepted"; }
 
 interface ChatMessage {
   id: string;
@@ -225,6 +225,7 @@ export default function App() {
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [roomNameInput, setRoomNameInput] = useState("");
   const [roomNotice, setRoomNotice] = useState("");
+  const [inviteRoomId, setInviteRoomId] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [chatHomeView, setChatHomeView] = useState<"rooms" | "friends">("rooms");
   const [friendCodeSearch, setFriendCodeSearch] = useState("");
@@ -244,14 +245,12 @@ export default function App() {
     const savedCourses = localStorage.getItem("studysync_courses");
     const savedUsers = localStorage.getItem("studysync_registered_users");
     const savedNotes = localStorage.getItem("studysync_notes");
-    const savedRooms = localStorage.getItem("studysync_rooms");
 
     if (savedTasks) setTasks(JSON.parse(savedTasks));
     if (savedSubjects) setSubjects(JSON.parse(savedSubjects));
     if (savedCourses) setCourses(JSON.parse(savedCourses));
     if (savedUsers) setRegisteredUsers(JSON.parse(savedUsers));
     if (savedNotes) setNotes(JSON.parse(savedNotes));
-    if (savedRooms) setRooms(JSON.parse(savedRooms));
   }, []);
 
   useEffect(() => {
@@ -274,10 +273,6 @@ export default function App() {
     if (mounted) localStorage.setItem("studysync_notes", JSON.stringify(notes));
   }, [notes, mounted]);
 
-  useEffect(() => {
-    if (mounted) localStorage.setItem("studysync_rooms", JSON.stringify(rooms));
-  }, [rooms, mounted]);
-
   // The prototype login remains local; Firebase anonymous auth supplies a safe
   // per-install sender identity for Firestore operations.
   useEffect(() => {
@@ -287,6 +282,30 @@ export default function App() {
     });
     return unsubscribe;
   }, []);
+
+  // Show only rooms that this signed-in user has actually created or joined.
+  useEffect(() => {
+    if (!firebaseUser) { setRooms([]); return; }
+    const memberRoomsQuery = query(
+      collection(db, "studyRooms"),
+      where("members", "array-contains", firebaseUser.uid)
+    );
+    return onSnapshot(memberRoomsQuery, (snapshot) => {
+      // Subject chats were app-generated from the Academics screen; keep them out
+      // of the chat list so it only contains user-created/joined study rooms.
+      setRooms(snapshot.docs
+        .filter((roomDoc) => roomDoc.data().type !== "subject")
+        .map((roomDoc) => {
+          const data = roomDoc.data();
+          return {
+            id: roomDoc.id,
+            name: data.name || "Study room",
+            type: "group",
+            inviteCode: typeof data.inviteCode === "string" ? data.inviteCode : undefined,
+          } as StudyRoom;
+        }));
+    }, (error) => setFirebaseError(error.message || "Could not load your joined and created rooms."));
+  }, [firebaseUser?.uid]);
 
   // Publish the current profile under a private-auth UID and reserve its 6-digit lookup code.
   useEffect(() => {
@@ -508,7 +527,7 @@ export default function App() {
           await runTransaction(db, async (transaction) => {
             const existingCode = await transaction.get(inviteRef);
             if (existingCode.exists()) throw new Error("CODE_TAKEN");
-            transaction.set(roomRef, { name: cleanName, type, members: [firebaseUser.uid], createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+            transaction.set(roomRef, { name: cleanName, type, inviteCode: code, members: [firebaseUser.uid], createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
             transaction.set(inviteRef, { roomId: roomRef.id, createdAt: serverTimestamp() });
           });
           created = { id: roomRef.id, name: cleanName, type, inviteCode: code };
@@ -519,6 +538,19 @@ export default function App() {
       setActiveRoom(created);
     } catch (error: any) { setFirebaseError(error?.message || "Could not create the study room."); }
   };
+  const inviteFriendToRoom = async (room: StudyRoom, friend: FriendProfile) => {
+    if (!firebaseUser) { setRoomNotice("Connecting securely to chat… please try again in a moment."); return; }
+    try {
+      await updateDoc(doc(db, "studyRooms", room.id), {
+        members: arrayUnion(friend.uid),
+        updatedAt: serverTimestamp(),
+      });
+      setRoomNotice(`${friend.username} was added to ${room.name}.`);
+    } catch (error: any) {
+      setFirebaseError(error?.message || "Could not add this friend. Check your Firestore permissions.");
+    }
+  };
+
   const joinStudyRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firebaseUser) { setRoomNotice("Connecting securely to chat… please try again in a moment."); return; }
@@ -1464,7 +1496,7 @@ export default function App() {
                   </form>
                   {roomNotice && <p className="text-xs text-amber-300">{roomNotice}</p>}
                   {firebaseError && <p className="rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
-                  <div className="space-y-2">{rooms.map((room) => <div key={room.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3"><button onClick={() => setActiveRoom(room)} className="flex min-w-0 flex-1 items-center gap-3 text-left"><span className="rounded-lg bg-indigo-600/20 p-2 text-indigo-200"><MessageSquare className="h-4 w-4"/></span><span className="min-w-0"><span className="block truncate text-xs font-bold">{room.name}</span><span className="text-[10px] text-slate-400">{room.type === "subject" ? "Subject chat" : "Study group"}</span></span></button>{room.inviteCode && <button onClick={() => { navigator.clipboard.writeText(room.inviteCode!); setRoomNotice(`Invite code ${room.inviteCode} copied.`); }} className="rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] tracking-wider text-indigo-200">{room.inviteCode}</button>}</div>)}{rooms.length === 0 && <div className={`rounded-2xl border-2 border-dashed py-8 text-center ${darkMode ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-400"}`}><MessageSquare className="mx-auto mb-2 h-8 w-8 opacity-40"/><p className="text-xs">No study rooms yet. Create one or join with a code.</p></div>}</div>
+                  <div className="space-y-2">{rooms.map((room) => <div key={room.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><div className="flex items-center justify-between gap-2"><button onClick={() => setActiveRoom(room)} className="flex min-w-0 flex-1 items-center gap-3 text-left"><span className="rounded-lg bg-indigo-600/20 p-2 text-indigo-200"><MessageSquare className="h-4 w-4"/></span><span className="min-w-0"><span className="block truncate text-xs font-bold">{room.name}</span><span className="text-[10px] text-slate-400">Study group</span></span></button><div className="flex shrink-0 items-center gap-1">{room.inviteCode && <button onClick={() => { void navigator.clipboard.writeText(room.inviteCode!); setRoomNotice(`Room code ${room.inviteCode} copied.`); }} aria-label={`Copy room code ${room.inviteCode}`} className="rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] tracking-wider text-indigo-200">Code {room.inviteCode}</button>}<button onClick={() => { setInviteRoomId(inviteRoomId === room.id ? null : room.id); setRoomNotice(""); }} className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1.5 text-[10px] font-bold text-white"><Users className="h-3 w-3"/>Invite</button></div></div>{inviteRoomId === room.id && <div className="mt-3 space-y-2 border-t border-slate-800 pt-3"><p className="text-[10px] font-semibold text-slate-400">Add a friend to {room.name}</p>{friendProfiles.length ? friendProfiles.map((friend) => <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-lg bg-slate-900 px-3 py-2"><span className="truncate text-xs">{friend.username} <span className="font-mono text-[10px] text-slate-500">#{friend.friendCode}</span></span><button onClick={() => void inviteFriendToRoom(room, friend)} className="shrink-0 rounded-md border border-indigo-400/30 px-2 py-1 text-[10px] font-bold text-indigo-200">Add to room</button></div>) : <p className="text-[10px] text-slate-500">Accept friend requests first, then you can add friends here.</p>}</div>}</div>)}{rooms.length === 0 && <div className={`rounded-2xl border-2 border-dashed py-8 text-center ${darkMode ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-400"}`}><MessageSquare className="mx-auto mb-2 h-8 w-8 opacity-40"/><p className="text-xs">No study rooms yet. Create one or join with a code.</p></div>}</div>
                   </> : <div className="space-y-4">
                     <form onSubmit={sendFriendRequest} className="space-y-2 rounded-2xl border border-indigo-500/25 bg-slate-950/50 p-3"><label className="block text-xs font-semibold">Find a friend by their 6-digit code</label><div className="flex gap-2"><input value={friendCodeSearch} onChange={(e) => setFriendCodeSearch(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter friend code" maxLength={6} inputMode="numeric" className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-xs tracking-widest text-white"/><button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">Send Request</button></div>{friendNotice && <p className="text-[10px] text-indigo-200">{friendNotice}</p>}</form>
                     {firebaseError && <p className="rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
@@ -1637,7 +1669,6 @@ export default function App() {
                                 <span className={`text-xs font-black px-2 py-0.5 rounded ${pct >= 75 ? "bg-emerald-950 text-emerald-400" : "bg-rose-950 text-rose-400"}`}>{pct.toFixed(1)}%</span>
                               </div>
                               <div className="flex gap-2">
-                                <button onClick={() => createStudyRoom(`${sub.name} Chat`, "subject", `subject-${sub.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "study"}`)} className="flex items-center gap-1 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-2 py-1 text-[10px] font-semibold text-indigo-200"><MessageSquare className="h-3 w-3"/>Subject Chat</button>
                                 <button onClick={() => markAttendance(sub.id, 1, 1)} className="attendance-attended flex-1 py-1 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded-lg text-[10px] font-semibold">+ Attended</button>
                                 <button onClick={() => markAttendance(sub.id, 0, 1)} className="attendance-missed flex-1 py-1 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded-lg text-[10px] font-semibold">+ Bunked</button>
                                 <button onClick={() => deleteSubject(sub.id)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
