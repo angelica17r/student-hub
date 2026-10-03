@@ -938,9 +938,35 @@ export default function App() {
           min-height: 0 !important;
           flex: 0 0 auto;
         }
+        /* While a room is open, size the app to the viewport and reserve scrolling
+           for the messages pane only. */
+        .study-sync-panel.study-chat-active {
+          height: min(calc(100dvh - 24px), 900px);
+          min-height: 0 !important;
+        }
+        .study-chat-open { min-height: 0; overflow: hidden; }
+        .study-chat-open .chat-tab {
+          display: flex;
+          flex: 1 1 0%;
+          flex-direction: column;
+          height: 100%;
+          min-height: 0;
+          margin-top: 0;
+          margin-bottom: 0;
+          overflow: hidden;
+        }
+        .study-chat-open .study-room-chat {
+          height: auto;
+          max-height: 100%;
+          min-height: 0 !important;
+          flex: 1 1 0%;
+        }
         .study-room-messages {
           min-height: 0;
           overscroll-behavior: contain;
+        }
+        @media (min-width: 1024px) {
+          .study-sync-panel.study-chat-active { height: min(calc(100dvh - 4rem), 900px); }
         }
         .theme-day .pixel-room-scene {
           background-image: linear-gradient(180deg, rgba(251,228,216,.12), rgba(43,18,76,.32)), var(--study-room-background);
@@ -1325,7 +1351,7 @@ export default function App() {
         }
       `}</style>
       <div
-        className={`study-sync-scene theme-${darkMode ? "night" : "day"} study-sync-panel w-full max-w-md min-h-[720px] lg:max-w-7xl lg:min-h-[calc(100vh-4rem)] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300`}
+        className={`study-sync-scene theme-${darkMode ? "night" : "day"} study-sync-panel w-full max-w-md min-h-[720px] lg:max-w-7xl lg:min-h-[calc(100vh-4rem)] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300 ${screen === "home" && homeTab === "chat" && activeRoom ? "study-chat-active" : ""}`}
       >
         {/* Full-scale study-room image fills the app background */}
         <div className="pixel-room-scene" aria-hidden="true" />
@@ -1528,7 +1554,7 @@ export default function App() {
 
         {/* ================= SCREEN 3: HOME SCREEN (3 MAIN BUBBLES/CARDS) ================= */}
         {screen === "home" && (
-          <div className="study-home flex-1 flex flex-col justify-between p-6 lg:p-10">
+          <div className={`study-home flex-1 flex flex-col justify-between p-6 lg:p-10 ${homeTab === "chat" && activeRoom ? "study-chat-open" : ""}`}>
             
             {/* Header with Back button (>) if inside a tab */}
             <div className="study-home-header flex items-center justify-between mt-2">
