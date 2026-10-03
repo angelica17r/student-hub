@@ -45,18 +45,6 @@ interface Task {
   completed: boolean;
 }
 
-interface StudyNote {
-  id: string;
-  title: string;
-  body: string;
-  tags: string[];
-  createdAt: number;
-  imageDataUrl?: string;
-  sourceRoomId?: string;
-  sourceRoomName?: string;
-  sourceMessageId?: string;
-}
-
 interface StudyRoom {
   id: string;
   name: string;
@@ -272,13 +260,6 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [courses, setCourses] = useState<CourseGrade[]>([]);
-  const [notes, setNotes] = useState<StudyNote[]>([]);
-  const [noteTitle, setNoteTitle] = useState("");
-  const [noteBody, setNoteBody] = useState("");
-  const [noteTagsInput, setNoteTagsInput] = useState("");
-  const [noteSearch, setNoteSearch] = useState("");
-  const [activeNoteTag, setActiveNoteTag] = useState("all");
-  const [notesTodosView, setNotesTodosView] = useState<"todos" | "notes">("todos");
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [firebaseError, setFirebaseError] = useState("");
   const [rooms, setRooms] = useState<StudyRoom[]>([]);
@@ -291,7 +272,6 @@ export default function App() {
   const [roomNoteTitle, setRoomNoteTitle] = useState("");
   const [roomNoteBody, setRoomNoteBody] = useState("");
   const [roomNoteImageDraft, setRoomNoteImageDraft] = useState("");
-  const [savedMessageIds, setSavedMessageIds] = useState<string[]>([]);
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [roomNameInput, setRoomNameInput] = useState("");
   const [roomNotice, setRoomNotice] = useState("");
@@ -316,13 +296,11 @@ export default function App() {
     const savedSubjects = localStorage.getItem("studysync_subjects");
     const savedCourses = localStorage.getItem("studysync_courses");
     const savedUsers = localStorage.getItem("studysync_registered_users");
-    const savedNotes = localStorage.getItem("studysync_notes");
 
     if (savedTasks) setTasks(JSON.parse(savedTasks));
     if (savedSubjects) setSubjects(JSON.parse(savedSubjects));
     if (savedCourses) setCourses(JSON.parse(savedCourses));
     if (savedUsers) setRegisteredUsers(JSON.parse(savedUsers));
-    if (savedNotes) setNotes(JSON.parse(savedNotes));
   }, []);
 
   useEffect(() => {
@@ -340,10 +318,6 @@ export default function App() {
   useEffect(() => {
     if (mounted) localStorage.setItem("studysync_registered_users", JSON.stringify(registeredUsers));
   }, [registeredUsers, mounted]);
-
-  useEffect(() => {
-    if (mounted) localStorage.setItem("studysync_notes", JSON.stringify(notes));
-  }, [notes, mounted]);
 
   // The prototype login remains local; Firebase anonymous auth supplies a safe
   // per-install sender identity for Firestore operations.
@@ -612,7 +586,7 @@ export default function App() {
       const key = email.trim().toLowerCase();
       setRegisteredUsers((current) => { const next = { ...current }; delete next[key]; return next; });
       for (const storageKey of ["studysync_tasks", "studysync_subjects", "studysync_courses", "studysync_notes"]) localStorage.removeItem(storageKey);
-      setTasks([]); setSubjects([]); setCourses([]); setNotes([]); setFriendProfiles([]); setIncomingRequests([]); setOutgoingRequests([]);
+      setTasks([]); setSubjects([]); setCourses([]); setFriendProfiles([]); setIncomingRequests([]); setOutgoingRequests([]);
       setActiveRoom(null); setUsername(""); setPfp(null); setPassword(""); setEmail("");
       setFriendCode(String(Math.floor(100000 + Math.random() * 900000)));
       setUsernameNotice("");
@@ -641,26 +615,7 @@ export default function App() {
     setTasks(tasks.filter((t) => t.id !== id));
   };
 
-  const addNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteTitle.trim() && !noteBody.trim()) return;
-    const tags = [...new Set(noteTagsInput.split(/[ ,]+/).map((tag) => tag.replace(/^#/, "").trim().toLowerCase()).filter(Boolean))];
-    setNotes((current) => [{ id: crypto.randomUUID(), title: noteTitle.trim() || "Untitled note", body: noteBody.trim(), tags, createdAt: Date.now() }, ...current]);
-    setNoteTitle(""); setNoteBody(""); setNoteTagsInput("");
-  };
-  const deleteNote = (id: string) => setNotes((current) => current.filter((note) => note.id !== id));
-  const allNoteTags = [...new Set(notes.flatMap((note) => note.tags))].sort();
-  const filteredNotes = notes.filter((note) =>
-    (activeNoteTag === "all" || note.tags.includes(activeNoteTag)) &&
-    `${note.sourceRoomName || ""} ${note.title} ${note.body} ${note.tags.join(" ")}`.toLowerCase().includes(noteSearch.toLowerCase())
-  );
-  const standaloneNotes = filteredNotes.filter((note) => !note.sourceRoomId);
-  const chatNoteGroups = Array.from(filteredNotes.filter((note) => note.sourceRoomId).reduce((groups, note) => {
-    const roomId = note.sourceRoomId!;
-    if (!groups.has(roomId)) groups.set(roomId, []);
-    groups.get(roomId)!.push(note);
-    return groups;
-  }, new Map<string, StudyNote[]>()));
+
 
   // --- SUBJECTS ACTIONS ---
   const [newSubName, setNewSubName] = useState("");
@@ -847,32 +802,19 @@ export default function App() {
     }
   };
 
-  const saveMessageToNotes = async (message: ChatMessage) => {
+  const toggleMessageSaved = async (message: ChatMessage) => {
     if (!activeRoom || !firebaseUser) return;
-    const existingNote = notes.find((note) => note.sourceRoomId === activeRoom.id && note.sourceMessageId === message.id);
+    const savedMessage = roomNotes.find((note) => note.savedMessage && note.sourceMessageId === message.id);
     const sharedNoteId = `saved-message-${message.id}`;
     try {
-      if (existingNote) {
-        setNotes((current) => current.filter((note) => !(note.sourceRoomId === activeRoom.id && note.sourceMessageId === message.id)));
+      if (savedMessage) {
         await deleteDoc(doc(db, "studyRooms", activeRoom.id, "notes", sharedNoteId));
         setFirebaseError("");
         return;
       }
-      const savedNote: StudyNote = {
-        id: `chat-${activeRoom.id}-${message.id}`,
+      await setDoc(doc(db, "studyRooms", activeRoom.id, "notes", sharedNoteId), {
         title: `From ${message.senderName || "Student"}`,
         body: message.text || "Image from study chat",
-        tags: ["chat", activeRoom.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "room")],
-        createdAt: Date.now(),
-        imageDataUrl: message.imageDataUrl,
-        sourceRoomId: activeRoom.id,
-        sourceRoomName: activeRoom.name,
-        sourceMessageId: message.id,
-      };
-      setNotes((current) => [savedNote, ...current]);
-      await setDoc(doc(db, "studyRooms", activeRoom.id, "notes", sharedNoteId), {
-        title: savedNote.title,
-        body: savedNote.body,
         ...(message.imageDataUrl ? { imageDataUrl: message.imageDataUrl } : {}),
         authorName: message.senderName || "Student",
         authorId: message.senderId,
@@ -1083,6 +1025,8 @@ export default function App() {
           min-height: 0 !important;
         }
         .study-chat-open { min-height: 0; overflow: hidden; }
+        .study-chat-open .study-home-header { display: none; }
+        .study-chat-open > .chat-tab { width: 100%; max-width: none; align-self: stretch; }
         .study-chat-open .chat-tab {
           display: flex;
           flex: 1 1 0%;
@@ -1432,6 +1376,8 @@ export default function App() {
         }
         .study-sync-scene .timer-preset:disabled { opacity: .65; cursor: not-allowed; }
         @media (min-width: 1024px) {
+          .study-home.study-chat-open { display: flex; flex-direction: column; gap: 0; }
+          .study-chat-open > .chat-tab { flex: 1 1 0%; width: 100%; max-width: none; align-self: stretch; }
           .study-sync-shell { align-items: stretch; }
           .study-sync-panel { width: 100%; max-width: 1280px; min-height: calc(100vh - 4rem); }
           .study-home {
@@ -1860,7 +1806,7 @@ export default function App() {
                           <p className="mb-1 text-[9px] font-bold opacity-75">{message.senderName || "Student"}</p>
                           {message.imageDataUrl && <img src={message.imageDataUrl} alt="Shared notes" className="mb-2 max-h-64 max-w-full rounded-lg object-contain"/>}
                           {message.text && <p className="whitespace-pre-wrap break-words text-xs">{message.text}</p>}
-                          <div className="mt-1 flex items-center justify-between gap-3"><span className="text-[8px] opacity-60">{message.createdAt?.toDate ? message.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><button type="button" onClick={() => void saveMessageToNotes(message)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-semibold opacity-80 hover:bg-white/10" title={notes.some((note) => note.sourceRoomId === activeRoom?.id && note.sourceMessageId === message.id) ? "Remove from saved notes" : "Save this message to notes"}><BookmarkPlus className="h-3 w-3"/>{notes.some((note) => note.sourceRoomId === activeRoom?.id && note.sourceMessageId === message.id) ? "Saved" : "Save"}</button></div>
+                          <div className="mt-1 flex items-center justify-between gap-3"><span className="text-[8px] opacity-60">{message.createdAt?.toDate ? message.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><button type="button" onClick={() => void toggleMessageSaved(message)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-semibold opacity-80 hover:bg-white/10" title={roomNotes.some((note) => note.savedMessage && note.sourceMessageId === message.id) ? "Remove from group notes" : "Save to this group’s notes"}><BookmarkPlus className="h-3 w-3"/>{roomNotes.some((note) => note.savedMessage && note.sourceMessageId === message.id) ? "Saved" : "Save"}</button></div>
                         </div>
                       </div>)}
                       {chatMessages.length === 0 && <p className="py-12 text-center text-xs text-slate-500">Say hello to start the conversation.</p>}
@@ -1889,7 +1835,7 @@ export default function App() {
               <div className="flex-1 flex flex-col pt-4 space-y-4 overflow-y-auto">
                 <div className="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
                   <button onClick={() => navigate({ academicsSubTab: "dashboard" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Dashboard</button>
-                  <button onClick={() => navigate({ academicsSubTab: "tasks" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "tasks" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>Notes & Todos</button>
+                  <button onClick={() => navigate({ academicsSubTab: "tasks" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "tasks" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>Tasks</button>
                   <button onClick={() => navigate({ academicsSubTab: "pomodoro" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "pomodoro" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Timer</button>
                   <button onClick={() => navigate({ academicsSubTab: "subjects" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "subjects" ? "bg-teal-600 text-white" : "text-slate-400"}`}>Bunks</button>
                   <button onClick={() => navigate({ academicsSubTab: "grades" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "grades" ? "bg-amber-600 text-white" : "text-slate-400"}`}>SGPA</button>
@@ -1933,47 +1879,19 @@ export default function App() {
 
                   {academicsSubTab === "tasks" && (
                     <div className="space-y-3">
-                      <div className="flex gap-2 rounded-xl bg-slate-950 border border-slate-800 p-1">
-                        <button onClick={() => setNotesTodosView("todos")} className={`flex-1 rounded-lg py-2 text-xs font-bold ${notesTodosView === "todos" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Todos</button>
-                        <button onClick={() => setNotesTodosView("notes")} className={`flex-1 rounded-lg py-2 text-xs font-bold ${notesTodosView === "notes" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Notes</button>
-                      </div>
-                      {notesTodosView === "todos" ? <div className="space-y-3">
                       <form onSubmit={addTask} className="flex gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="Add task..."
-                          value={newTask}
-                          onChange={(e) => setNewTask(e.target.value)}
-                          className="flex-1 bg-slate-950 border border-slate-800 text-xs text-white px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-500"
-                        />
-                        <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1">
-                          <Plus className="w-4 h-4" /> Add
-                        </button>
+                        <input type="text" placeholder="Add task..." value={newTask} onChange={(e) => setNewTask(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 text-xs text-white px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-500" />
+                        <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1"><Plus className="w-4 h-4" /> Add</button>
                       </form>
                       <div className="space-y-2">
                         {tasks.map((task) => (
                           <div key={task.id} onClick={() => toggleTask(task.id)} className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
-                            <div className="flex items-center space-x-3">
-                              <input type="checkbox" checked={task.completed} readOnly className="rounded accent-emerald-500 h-4 w-4" />
-                              <span className={`text-xs ${task.completed ? "line-through text-slate-500" : "text-slate-200"}`}>{task.text}</span>
-                            </div>
+                            <div className="flex items-center space-x-3"><input type="checkbox" checked={task.completed} readOnly className="rounded accent-emerald-500 h-4 w-4" /><span className={`text-xs ${task.completed ? "line-through text-slate-500" : "text-slate-200"}`}>{task.text}</span></div>
                             <button onClick={(e) => deleteTask(task.id, e)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         ))}
+                        {tasks.length === 0 && <p className="py-6 text-center text-xs text-slate-500">No tasks yet. Add one above.</p>}
                       </div>
-                      </div> : <div className="space-y-3">
-                        <form onSubmit={addNote} className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950 p-3">
-                          <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} placeholder="Note title" className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white" />
-                          <textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Write a note…" rows={3} className="w-full resize-y rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white" />
-                          <div className="flex gap-2"><input value={noteTagsInput} onChange={(e) => setNoteTagsInput(e.target.value)} placeholder="Tags: exam, homework, important" className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white" /><button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white"><Plus className="mr-1 inline h-4 w-4"/>Save</button></div>
-                        </form>
-                        <div className="flex gap-2"><input value={noteSearch} onChange={(e) => setNoteSearch(e.target.value)} placeholder="Search notes or tags…" className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white" /><select value={activeNoteTag} onChange={(e) => setActiveNoteTag(e.target.value)} className="max-w-36 rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-white"><option value="all">All tags</option>{allNoteTags.map((tag) => <option key={tag} value={tag}>#{tag}</option>)}</select></div>
-                        <div className="space-y-3">
-                          {standaloneNotes.map((note) => <article key={note.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="text-xs font-bold text-slate-100">{note.title}</h4>{note.imageDataUrl && <img src={note.imageDataUrl} alt="Saved note attachment" className="mt-2 max-h-56 rounded-lg object-contain"/>}{note.body && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{note.body}</p>}</div><button onClick={() => deleteNote(note.id)} aria-label="Delete note" className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4"/></button></div>{note.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{note.tags.map((tag) => <button key={tag} onClick={() => setActiveNoteTag(tag)} className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">#{tag}</button>)}</div>}</article>)}
-                          {chatNoteGroups.map(([roomId, roomGroupNotes]) => <section key={roomId} className="space-y-2 rounded-xl border border-indigo-400/20 bg-indigo-950/20 p-2"><h4 className="px-1 text-[10px] font-bold uppercase tracking-wide text-indigo-200">{roomGroupNotes[0]?.sourceRoomName || "Study chat"}</h4>{roomGroupNotes.map((note) => <article key={note.id} className="rounded-lg border border-slate-800 bg-slate-950 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="text-xs font-bold text-slate-100">{note.title}</h4>{note.imageDataUrl && <img src={note.imageDataUrl} alt="Saved chat attachment" className="mt-2 max-h-56 rounded-lg object-contain"/>}{note.body && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{note.body}</p>}</div><button onClick={() => deleteNote(note.id)} aria-label="Delete saved note" className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4"/></button></div>{note.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{note.tags.map((tag) => <button key={tag} onClick={() => setActiveNoteTag(tag)} className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">#{tag}</button>)}</div>}</article>)}</section>)}
-                          {filteredNotes.length === 0 && <p className="py-6 text-center text-xs text-slate-500">No notes match this filter yet.</p>}
-                        </div>
-                      </div>}
                     </div>
                   )}
 
