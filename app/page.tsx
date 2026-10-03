@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Moon,
   Sun,
@@ -110,6 +110,57 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [mounted, setMounted] = useState(false);
 
+  type NavigationSnapshot = {
+    screen: "auth" | "profile-setup" | "home";
+    homeTab: "hub" | "chat" | "academics" | "account";
+    academicsSubTab: "dashboard" | "tasks" | "pomodoro" | "subjects" | "grades";
+  };
+  const navigationRef = useRef<NavigationSnapshot>({ screen, homeTab, academicsSubTab });
+  navigationRef.current = { screen, homeTab, academicsSubTab };
+
+  const navigate = (patch: Partial<NavigationSnapshot>) => {
+    const next = { ...navigationRef.current, ...patch };
+    navigationRef.current = next;
+    if (typeof window !== "undefined") {
+      window.history.pushState({ studySyncNavigation: next }, "", window.location.href);
+    }
+    setScreen(next.screen);
+    setHomeTab(next.homeTab);
+    setAcademicsSubTab(next.academicsSubTab);
+  };
+
+  // Make browser and hardware back buttons follow the app's own screen stack.
+  useEffect(() => {
+    if (!window.history.state?.studySyncNavigation) {
+      window.history.replaceState({ studySyncNavigation: navigationRef.current }, "", window.location.href);
+    }
+    const handlePopState = (event: PopStateEvent) => {
+      const previous = event.state?.studySyncNavigation as NavigationSnapshot | undefined;
+      if (previous) {
+        navigationRef.current = previous;
+        setScreen(previous.screen);
+        setHomeTab(previous.homeTab);
+        setAcademicsSubTab(previous.academicsSubTab);
+        return;
+      }
+      // If the browser reaches a non-app entry while a nested screen is open,
+      // keep the user in the app and return them to the nearest parent view.
+      const current = navigationRef.current;
+      const fallback: NavigationSnapshot = current.screen === "profile-setup"
+        ? { ...current, screen: "auth" }
+        : current.screen === "home" && current.homeTab !== "hub"
+          ? { ...current, homeTab: "hub" }
+          : { ...current, screen: "auth", homeTab: "hub" };
+      navigationRef.current = fallback;
+      setScreen(fallback.screen);
+      setHomeTab(fallback.homeTab);
+      setAcademicsSubTab(fallback.academicsSubTab);
+      window.history.pushState({ studySyncNavigation: fallback }, "", window.location.href);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   // Authentication & Profile State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -199,8 +250,7 @@ export default function App() {
     setUsername(userRecord.username);
     setPfp(userRecord.pfp);
     setFriendCode(userRecord.friendCode);
-    setHomeTab("hub");
-    setScreen("home");
+    navigate({ homeTab: "hub", screen: "home" });
   };
 
   // Handle Sign Up creation
@@ -222,8 +272,7 @@ export default function App() {
     };
 
     setRegisteredUsers(updatedUsers);
-    setHomeTab("hub");
-    setScreen("home");
+    navigate({ homeTab: "hub", screen: "home" });
   };
 
   // --- TASKS ACTIONS ---
@@ -377,7 +426,7 @@ export default function App() {
   if (!mounted) return null;
 
   return (
-    <div className={`study-sync-shell min-h-screen flex items-center justify-center font-sans transition-colors duration-300 p-4 ${darkMode ? "bg-[#101735] text-slate-100" : "bg-[#ead39d] text-slate-900"}`}>
+    <div className={`study-sync-shell min-h-screen flex items-center justify-center font-sans transition-colors duration-300 p-3 sm:p-4 lg:p-8 ${darkMode ? "bg-[#101735] text-slate-100" : "bg-[#ead39d] text-slate-900"}`}>
       <style>{`
         .study-sync-scene {
           --ink: #f2f0ff;
@@ -728,9 +777,68 @@ export default function App() {
           border-color: #522b5b !important;
         }
         .study-sync-scene .timer-preset:disabled { opacity: .65; cursor: not-allowed; }
+        @media (min-width: 1024px) {
+          .study-sync-shell { align-items: stretch; }
+          .study-sync-panel { width: 100%; max-width: 1280px; min-height: calc(100vh - 4rem); }
+          .study-home {
+            display: grid;
+            grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
+            grid-template-rows: auto minmax(0, 1fr);
+            align-content: start;
+            align-items: start;
+            gap: 0 3rem;
+            justify-content: stretch;
+          }
+          .study-home-header {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            align-self: stretch;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            gap: 2rem;
+            margin-top: 0 !important;
+            padding: 1.5rem;
+            border: 1px solid var(--line);
+            border-radius: 1.5rem;
+            background: rgba(25,0,25,.38);
+          }
+          .theme-day .study-home-header { background: rgba(255,244,236,.54); }
+          .study-home-header > div:first-child { flex-wrap: wrap; }
+          .study-home > div:not(.study-home-header) { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 980px; justify-self: center; align-self: center; }
+          .study-home > div.space-y-4.my-auto { padding: 1.5rem; }
+          .study-home > div.flex-1.flex.flex-col.pt-4 { align-self: stretch; max-height: calc(100vh - 8rem); }
+          .study-home .study-nav-card { padding: 1.5rem; min-height: 112px; }
+          .study-home .study-nav-card h3 { font-size: 1.15rem; }
+          .study-home .study-nav-card p { font-size: .875rem; }
+          .study-home .study-nav-card .p-3 { padding: 1rem; }
+          .study-home .study-nav-card .p-3 svg { width: 1.75rem; height: 1.75rem; }
+        }
+        @media (min-width: 1280px) {
+          .study-home { grid-template-columns: 290px minmax(0, 1fr); gap: 0 4rem; }
+          .study-home-header { padding: 2rem; }
+          .study-home > div.space-y-4.my-auto { padding: 2rem 3rem; }
+        }
+        @media (min-width: 1024px) {
+          .study-auth-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(340px, .9fr);
+            grid-template-rows: 1fr auto;
+            align-items: center;
+            gap: 1rem 4rem;
+            width: min(100%, 1040px);
+            min-height: 620px;
+            align-self: center;
+            margin-inline: auto;
+          }
+          .study-auth-layout > div:first-child { grid-column: 1; grid-row: 1 / span 2; max-width: 440px; justify-self: center; }
+          .study-auth-layout > form { grid-column: 2; grid-row: 1; width: 100%; align-self: end; }
+          .study-auth-layout > div:last-child { grid-column: 2; grid-row: 2; width: 100%; align-self: start; }
+          .study-profile-layout { width: min(100%, 760px); align-self: center; margin-inline: auto; }
+        }
       `}</style>
       <div
-        className={`study-sync-scene theme-${darkMode ? "night" : "day"} study-sync-panel w-full max-w-md min-h-[720px] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300`}
+        className={`study-sync-scene theme-${darkMode ? "night" : "day"} study-sync-panel w-full max-w-md min-h-[720px] lg:max-w-7xl lg:min-h-[calc(100vh-4rem)] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300`}
       >
         {/* Global Dark/Light Mode Toggle */}
         <button
@@ -747,7 +855,7 @@ export default function App() {
 
         {/* ================= SCREEN 1: SIGN UP & LOGIN SCREEN ================= */}
         {screen === "auth" && (
-          <div className="flex-1 p-6 flex flex-col justify-between">
+          <div className="study-auth-layout flex-1 p-6 flex flex-col justify-between">
             <div className="mt-12 space-y-2">
               <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-indigo-500/30">
                 <GraduationCap className="w-7 h-7" />
@@ -793,7 +901,7 @@ export default function App() {
 
             <div className="space-y-3">
               <button
-                onClick={() => { setAuthError(""); setScreen("profile-setup"); }}
+                onClick={() => { setAuthError(""); navigate({ screen: "profile-setup" }); }}
                 className={`w-full py-3.5 font-bold text-sm rounded-xl border transition-all ${
                   darkMode 
                     ? "border-slate-700 hover:bg-slate-800 text-slate-200" 
@@ -808,11 +916,11 @@ export default function App() {
 
         {/* ================= SCREEN 2: PROFILE SETUP SCREEN (Sign Up) ================= */}
         {screen === "profile-setup" && (
-          <form onSubmit={handleRegisterProfile} className="flex-1 p-6 flex flex-col justify-between">
+          <form onSubmit={handleRegisterProfile} className="study-profile-layout flex-1 p-6 flex flex-col justify-between">
             <div className="flex items-center gap-3">
               <button 
                 type="button"
-                onClick={() => setScreen("auth")}
+                onClick={() => navigate({ screen: "auth" })}
                 className={`p-2 rounded-xl border ${darkMode ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-100"}`}
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -919,14 +1027,14 @@ export default function App() {
 
         {/* ================= SCREEN 3: HOME SCREEN (3 MAIN BUBBLES/CARDS) ================= */}
         {screen === "home" && (
-          <div className="flex-1 flex flex-col justify-between p-6">
+          <div className="study-home flex-1 flex flex-col justify-between p-6 lg:p-10">
             
             {/* Header with Back button (>) if inside a tab */}
-            <div className="flex items-center justify-between mt-2">
+            <div className="study-home-header flex items-center justify-between mt-2">
               <div className="flex items-center space-x-3">
                 {homeTab !== "hub" && (
                   <button 
-                    onClick={() => setHomeTab("hub")}
+                    onClick={() => navigate({ homeTab: "hub" })}
                     className={`p-2 rounded-xl border mr-1 ${darkMode ? "border-slate-800 hover:bg-slate-800 text-slate-300" : "border-slate-200 hover:bg-slate-100 text-slate-700"}`}
                     aria-label="Back to Hub"
                   >
@@ -953,7 +1061,7 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => setScreen("auth")}
+                onClick={() => navigate({ screen: "auth" })}
                 className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
                 title="Logout"
               >
@@ -972,7 +1080,7 @@ export default function App() {
 
                 {/* Bubble 1: Chat */}
                 <div 
-                  onClick={() => setHomeTab("chat")}
+                  onClick={() => navigate({ homeTab: "chat" })}
                   className={`study-nav-card nav-chat group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
                     darkMode 
                       ? "bg-slate-950/60 border-indigo-500/20 hover:border-indigo-500/50 hover:bg-indigo-950/20" 
@@ -995,7 +1103,7 @@ export default function App() {
 
                 {/* Bubble 2: Academics */}
                 <div 
-                  onClick={() => setHomeTab("academics")}
+                  onClick={() => navigate({ homeTab: "academics" })}
                   className={`study-nav-card nav-academics group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
                     darkMode 
                       ? "bg-slate-950/60 border-emerald-500/20 hover:border-emerald-500/50 hover:bg-emerald-950/20" 
@@ -1018,7 +1126,7 @@ export default function App() {
 
                 {/* Bubble 3: Account */}
                 <div 
-                  onClick={() => setHomeTab("account")}
+                  onClick={() => navigate({ homeTab: "account" })}
                   className={`study-nav-card nav-account group p-5 rounded-3xl border transition-all cursor-pointer hover:scale-[1.02] flex items-center justify-between ${
                     darkMode 
                       ? "bg-slate-950/60 border-amber-500/20 hover:border-amber-500/50 hover:bg-amber-950/20" 
@@ -1096,11 +1204,11 @@ export default function App() {
             {homeTab === "academics" && (
               <div className="flex-1 flex flex-col pt-4 space-y-4 overflow-y-auto">
                 <div className="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-                  <button onClick={() => setAcademicsSubTab("dashboard")} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Dashboard</button>
-                  <button onClick={() => setAcademicsSubTab("tasks")} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "tasks" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>Tasks</button>
-                  <button onClick={() => setAcademicsSubTab("pomodoro")} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "pomodoro" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Timer</button>
-                  <button onClick={() => setAcademicsSubTab("subjects")} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "subjects" ? "bg-teal-600 text-white" : "text-slate-400"}`}>Bunks</button>
-                  <button onClick={() => setAcademicsSubTab("grades")} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "grades" ? "bg-amber-600 text-white" : "text-slate-400"}`}>SGPA</button>
+                  <button onClick={() => navigate({ academicsSubTab: "dashboard" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Dashboard</button>
+                  <button onClick={() => navigate({ academicsSubTab: "tasks" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "tasks" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>Tasks</button>
+                  <button onClick={() => navigate({ academicsSubTab: "pomodoro" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "pomodoro" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Timer</button>
+                  <button onClick={() => navigate({ academicsSubTab: "subjects" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "subjects" ? "bg-teal-600 text-white" : "text-slate-400"}`}>Bunks</button>
+                  <button onClick={() => navigate({ academicsSubTab: "grades" })} className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${academicsSubTab === "grades" ? "bg-amber-600 text-white" : "text-slate-400"}`}>SGPA</button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-4 pb-4">
@@ -1130,7 +1238,7 @@ export default function App() {
                           <span className="text-3xl font-black font-mono text-white">{formatTime(timeLeft)}</span>
                         </div>
                         <button 
-                          onClick={() => setAcademicsSubTab("pomodoro")}
+                          onClick={() => navigate({ academicsSubTab: "pomodoro" })}
                           className="w-full mt-2 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl"
                         >
                           Open Focus Timer
