@@ -265,6 +265,7 @@ export default function App() {
   const [rooms, setRooms] = useState<StudyRoom[]>([]);
   const [activeRoom, setActiveRoom] = useState<StudyRoom | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const chatMessagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [roomNotes, setRoomNotes] = useState<RoomNote[]>([]);
   const [activeRoomView, setActiveRoomView] = useState<"messages" | "notes">("messages");
   const [messageDraft, setMessageDraft] = useState("");
@@ -439,12 +440,18 @@ export default function App() {
     if (!activeRoom) { setChatMessages([]); return; }
     const messagesQuery = query(
       collection(db, "studyRooms", activeRoom.id, "messages"),
-      orderBy("createdAt", "asc"), limit(100)
+      orderBy("createdAt", "desc"), limit(100)
     );
     return onSnapshot(messagesQuery, (snapshot) => {
-      setChatMessages(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as ChatMessage)));
+      // Fetch the newest 100 messages, then reverse them for chronological display.
+      setChatMessages(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as ChatMessage)).reverse());
     }, (error) => setFirebaseError(error.message || "Could not load this chat."));
   }, [activeRoom?.id]);
+
+  useEffect(() => {
+    const messagePane = chatMessagesContainerRef.current;
+    if (messagePane) messagePane.scrollTop = messagePane.scrollHeight;
+  }, [activeRoom?.id, chatMessages]);
 
   useEffect(() => {
     if (!activeRoom) { setRoomNotes([]); return; }
@@ -1800,7 +1807,7 @@ export default function App() {
                   </div>
                   {roomNotice && <p className="mb-1 shrink-0 text-[10px] text-emerald-300">{roomNotice}</p>}{firebaseError && <p className="mb-1 shrink-0 rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
                   {activeRoomView === "messages" ? <>
-                    <div className="study-room-messages flex-1 space-y-2 overflow-y-auto py-1">
+                    <div ref={chatMessagesContainerRef} className="study-room-messages flex-1 space-y-2 overflow-y-auto py-1">
                       {chatMessages.map((message) => <div key={message.id} className={`group flex max-w-[95%] items-start gap-1 ${message.senderId === firebaseUser?.uid ? "ml-auto flex-row-reverse" : ""}`}>
                         <div className={`min-w-0 rounded-xl px-3 py-2 ${message.senderId === firebaseUser?.uid ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-100"}`}>
                           <p className="mb-1 text-[9px] font-bold opacity-75">{message.senderName || "Student"}</p>
