@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { onAuthStateChanged, signInAnonymously, type User as FirebaseUser } from "firebase/auth";
 import {
-  addDoc, arrayUnion, collection, doc, getDoc, limit, onSnapshot, orderBy,
+  addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy,
   query, runTransaction, serverTimestamp, setDoc, updateDoc, where, type Timestamp
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -134,6 +134,45 @@ const calculateGradePoint = (
   return { gp, letter, totalMarks, maxMarks };
 };
 
+const normalizeUsername = (value: string) => value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+const usernameClaimId = (value: string) => encodeURIComponent(normalizeUsername(value));
+
+async function reserveUniqueUsername(uid: string, requestedName: string) {
+  const name = requestedName.trim().replace(/\s+/g, " ");
+  const normalized = normalizeUsername(name);
+  if (name.length < 2 || name.length > 24 || name.includes("/")) {
+    throw new Error("Username must be 2–24 characters and cannot contain /.");
+  }
+  const profileRef = doc(db, "studyProfiles", uid);
+  const nextClaimRef = doc(db, "usernameClaims", usernameClaimId(name));
+  // Check profiles created before usernameClaims existed; the claim transaction
+  // below still makes simultaneous new signups race-safe.
+  const existingProfiles = await getDocs(collection(db, "studyProfiles"));
+  const legacyCollision = existingProfiles.docs.some((profile) =>
+    profile.id !== uid && normalizeUsername(String(profile.data().username || "")) === normalized
+  );
+  if (legacyCollision) throw new Error("USERNAME_TAKEN");
+  await runTransaction(db, async (transaction) => {
+    const [profileSnapshot, claimSnapshot] = await Promise.all([
+      transaction.get(profileRef),
+      transaction.get(nextClaimRef),
+    ]);
+    const oldName = profileSnapshot.data()?.username as string | undefined;
+    const oldClaimRef = oldName && normalizeUsername(oldName) !== normalized
+      ? doc(db, "usernameClaims", usernameClaimId(oldName))
+      : null;
+    const oldClaimSnapshot = oldClaimRef ? await transaction.get(oldClaimRef) : null;
+    if (claimSnapshot.exists() && claimSnapshot.data().uid !== uid) {
+      throw new Error("USERNAME_TAKEN");
+    }
+    transaction.set(nextClaimRef, { uid, username: name, updatedAt: serverTimestamp() });
+    if (oldClaimRef && oldClaimSnapshot?.exists() && oldClaimSnapshot.data().uid === uid) {
+      transaction.delete(oldClaimRef);
+    }
+    transaction.set(profileRef, { uid, username: name, usernameKey: normalized, updatedAt: serverTimestamp() }, { merge: true });
+  });
+}
+
 export default function App() {
   // Navigation & Screens State
   const [screen, setScreen] = useState<"auth" | "profile-setup" | "home">("auth");
@@ -198,11 +237,15 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [signupError, setSignupError] = useState("");
+  const [usernameAvailability, setUsernameAvailability] = useState<"idle" | "checking" | "available" | "taken" | "error">("idle");
   const [registeredUsers, setRegisteredUsers] = useState<{ [email: string]: { password: string; username: string; pfp: string | null; friendCode: string } }>({});
   
   const [friendCode, setFriendCode] = useState("");
   const [pfp, setPfp] = useState<string | null>(null);
   const [username, setUsername] = useState("");
+  const [accountUsernameDraft, setAccountUsernameDraft] = useState("");
+  const [usernameNotice, setUsernameNotice] = useState("");
   const [copied, setCopied] = useState(false);
 
   // --- STUDY APP FUNCTIONALITY STATE ---
@@ -233,6 +276,8 @@ export default function App() {
   const [friendProfiles, setFriendProfiles] = useState<FriendProfile[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<FriendRequest[]>([]);
+
+  useEffect(() => { setAccountUsernameDraft(username); }, [username]);
 
   // Generate 6-digit Friend Code & load LocalStorage on initial load
   useEffect(() => {
@@ -307,12 +352,42 @@ export default function App() {
     }, (error) => setFirebaseError(error.message || "Could not load your joined and created rooms."));
   }, [firebaseUser?.uid]);
 
+  // Check username availability on the signup form, not later in Chat.
+  useEffect(() => {
+    if (screen !== "profile-setup") { setUsernameAvailability("idle"); return; }
+    const name = username.trim().replace(/\s+/g, " ");
+    if (name.length < 2 || name.length > 24 || name.includes("/")) {
+      setUsernameAvailability("idle");
+      return;
+    }
+    let cancelled = false;
+    setUsernameAvailability("checking");
+    const timer = window.setTimeout(async () => {
+      try {
+        const [claim, profiles] = await Promise.all([
+          getDoc(doc(db, "usernameClaims", usernameClaimId(name))),
+          getDocs(collection(db, "studyProfiles")),
+        ]);
+        const normalized = normalizeUsername(name);
+        const claimedByAnother = claim.exists() && claim.data().uid !== firebaseUser?.uid;
+        const profileCollision = profiles.docs.some((profile) =>
+          profile.id !== firebaseUser?.uid && normalizeUsername(String(profile.data().username || "")) === normalized
+        );
+        if (!cancelled) setUsernameAvailability(claimedByAnother || profileCollision ? "taken" : "available");
+      } catch {
+        if (!cancelled) setUsernameAvailability("error");
+      }
+    }, 350);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [screen, username, firebaseUser?.uid]);
+
   // Publish the current profile under a private-auth UID and reserve its 6-digit lookup code.
   useEffect(() => {
-    if (!firebaseUser || !friendCode) return;
+    if (!firebaseUser || !friendCode || screen !== "home" || !username.trim()) return;
     let cancelled = false;
     const publishProfile = async () => {
       try {
+        await reserveUniqueUsername(firebaseUser.uid, username);
         let code = friendCode;
         for (let attempt = 0; attempt < 10; attempt++) {
           const codeRef = doc(db, "friendCodes", code);
@@ -329,11 +404,16 @@ export default function App() {
           code = String(Math.floor(100000 + Math.random() * 900000));
         }
         if (!cancelled && code !== friendCode) setFriendCode(code);
-      } catch (error: any) { if (!cancelled) setFirebaseError(error?.message || "Could not publish your friend code."); }
+      } catch (error: any) {
+        // Username conflicts belong to signup/account feedback, never the Chat tab.
+        if (!cancelled && error?.message !== "USERNAME_TAKEN") {
+          setFirebaseError(error?.message || "Could not publish your friend code.");
+        }
+      }
     };
     void publishProfile();
     return () => { cancelled = true; };
-  }, [firebaseUser?.uid, friendCode, username]);
+  }, [firebaseUser?.uid, friendCode, username, screen]);
 
   // Keep incoming/sent requests and the accepted friend list synced live.
   useEffect(() => {
@@ -409,10 +489,24 @@ export default function App() {
   };
 
   // Handle Sign Up creation
-  const handleRegisterProfile = (e: React.FormEvent) => {
+  const handleRegisterProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim() || !username.trim()) {
-      setAuthError("Please fill in all fields.");
+    const cleanUsername = username.trim().replace(/\s+/g, " ");
+    if (!email.trim() || !password.trim() || !cleanUsername) {
+      setSignupError("Please fill in all fields.");
+      return;
+    }
+    if (usernameAvailability === "taken") {
+      setSignupError("That username is already taken. Choose another one.");
+      return;
+    }
+    if (!firebaseUser) { setSignupError("Secure profile connection is not ready. Please try again."); return; }
+    setSignupError("");
+    try {
+      await reserveUniqueUsername(firebaseUser.uid, cleanUsername);
+    } catch (error: any) {
+      if (error?.message === "USERNAME_TAKEN") setUsernameAvailability("taken");
+      setSignupError(error?.message === "USERNAME_TAKEN" ? "That username is already taken. Choose another one." : error?.message || "Could not reserve that username.");
       return;
     }
 
@@ -420,14 +514,74 @@ export default function App() {
       ...registeredUsers,
       [email.trim().toLowerCase()]: {
         password,
-        username,
+        username: cleanUsername,
         pfp,
         friendCode
       }
     };
 
+    setUsername(cleanUsername);
     setRegisteredUsers(updatedUsers);
     navigate({ homeTab: "hub", screen: "home" });
+  };
+
+  const handleChangeUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firebaseUser) { setUsernameNotice("Secure profile connection is not ready. Please try again."); return; }
+    const nextName = accountUsernameDraft.trim().replace(/\s+/g, " ");
+    if (normalizeUsername(nextName) === normalizeUsername(username)) {
+      setUsernameNotice("That is already your username."); return;
+    }
+    try {
+      await reserveUniqueUsername(firebaseUser.uid, nextName);
+      if (friendCode) {
+        await setDoc(doc(db, "friendCodes", friendCode), { uid: firebaseUser.uid, username: nextName, friendCode, updatedAt: serverTimestamp() }, { merge: true });
+      }
+      setUsername(nextName);
+      setRegisteredUsers((current) => {
+        const key = email.trim().toLowerCase();
+        const record = current[key];
+        return record ? { ...current, [key]: { ...record, username: nextName } } : current;
+      });
+      setUsernameNotice("Username updated.");
+    } catch (error: any) {
+      setUsernameNotice(error?.message === "USERNAME_TAKEN" ? "That username is already taken." : error?.message || "Could not update username.");
+    }
+  };
+
+  const deleteProfile = async () => {
+    if (!firebaseUser) { setUsernameNotice("Secure profile connection is not ready."); return; }
+    if (!window.confirm("Delete your profile? Your username and friend code will be released, friend connections removed, and you will leave your study rooms. This cannot be undone.")) return;
+    const uid = firebaseUser.uid;
+    try {
+      const profileRef = doc(db, "studyProfiles", uid);
+      const profileSnapshot = await getDoc(profileRef);
+      const oldName = profileSnapshot.data()?.username as string | undefined;
+      const requestsQuery = query(collection(db, "friendRequests"), where("senderUid", "==", uid));
+      const receivedQuery = query(collection(db, "friendRequests"), where("receiverUid", "==", uid));
+      const memberRoomsQuery = query(collection(db, "studyRooms"), where("members", "array-contains", uid));
+      const [sent, received, memberRooms] = await Promise.all([getDocs(requestsQuery), getDocs(receivedQuery), getDocs(memberRoomsQuery)]);
+      const friendIds = (profileSnapshot.data()?.friends || []) as string[];
+      await Promise.all([
+        deleteDoc(profileRef),
+        deleteDoc(doc(db, "friendCodes", friendCode)),
+        ...(oldName ? [deleteDoc(doc(db, "usernameClaims", usernameClaimId(oldName)))] : []),
+        ...sent.docs.map((item) => deleteDoc(item.ref)),
+        ...received.docs.map((item) => deleteDoc(item.ref)),
+        ...memberRooms.docs.map((item) => updateDoc(item.ref, { members: arrayRemove(uid), updatedAt: serverTimestamp() })),
+        ...friendIds.map((friendId) => updateDoc(doc(db, "studyProfiles", friendId), { friends: arrayRemove(uid), updatedAt: serverTimestamp() })),
+      ]);
+      const key = email.trim().toLowerCase();
+      setRegisteredUsers((current) => { const next = { ...current }; delete next[key]; return next; });
+      for (const storageKey of ["studysync_tasks", "studysync_subjects", "studysync_courses", "studysync_notes"]) localStorage.removeItem(storageKey);
+      setTasks([]); setSubjects([]); setCourses([]); setNotes([]); setFriendProfiles([]); setIncomingRequests([]); setOutgoingRequests([]);
+      setActiveRoom(null); setUsername(""); setPfp(null); setPassword(""); setEmail("");
+      setFriendCode(String(Math.floor(100000 + Math.random() * 900000)));
+      setUsernameNotice("");
+      navigate({ screen: "auth", homeTab: "hub" });
+    } catch (error: any) {
+      setUsernameNotice(error?.message || "Could not fully delete the profile. Check Firestore permissions and try again.");
+    }
   };
 
   // --- TASKS ACTIONS ---
@@ -776,6 +930,17 @@ export default function App() {
           background-size: cover;
           background-position: center;
           image-rendering: auto;
+        }
+        /* Keep the active room's viewport fixed; new messages scroll inside it instead of
+           expanding the app frame and changing the background's cover crop. */
+        .study-room-chat {
+          height: clamp(390px, 58vh, 560px);
+          min-height: 0 !important;
+          flex: 0 0 auto;
+        }
+        .study-room-messages {
+          min-height: 0;
+          overscroll-behavior: contain;
         }
         .theme-day .pixel-room-scene {
           background-image: linear-gradient(180deg, rgba(251,228,216,.12), rgba(43,18,76,.32)), var(--study-room-background);
@@ -1311,11 +1476,17 @@ export default function App() {
                   type="text"
                   placeholder="Enter username"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => { setUsername(e.target.value); setSignupError(""); }}
+                  aria-invalid={usernameAvailability === "taken"}
                   className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
                     darkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
                   }`}
                 />
+                {usernameAvailability === "checking" && <p className="mt-1 text-[10px] text-slate-400">Checking username…</p>}
+                {usernameAvailability === "available" && <p className="mt-1 text-[10px] text-emerald-400">Username available</p>}
+                {usernameAvailability === "taken" && <p role="alert" className="mt-1 text-[10px] text-rose-400">Username taken. Please choose another.</p>}
+                {usernameAvailability === "error" && <p className="mt-1 text-[10px] text-amber-400">Could not check availability right now. We’ll verify when you register.</p>}
+                {signupError && <p role="alert" className="mt-1 text-xs text-rose-400">{signupError}</p>}
               </div>
 
               <div className={`p-3 rounded-xl border ${
@@ -1346,7 +1517,8 @@ export default function App() {
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 mt-4"
+              disabled={usernameAvailability === "taken" || usernameAvailability === "checking"}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 mt-4 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span>Complete Setup & Register</span>
               <ArrowRight className="w-4 h-4" />
@@ -1504,10 +1676,10 @@ export default function App() {
                     <section className="space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Your Friends</h4>{friendProfiles.map((friend) => <div key={friend.uid} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-3"><div><p className="text-xs font-bold">{friend.username}</p><p className="font-mono text-[10px] text-slate-400">#{friend.friendCode}</p></div><span className="rounded-full bg-emerald-900/40 px-2 py-1 text-[9px] text-emerald-300">Friends</span></div>)}{friendProfiles.length === 0 && <p className="text-[10px] text-slate-500">Your accepted friends will appear here.</p>}</section>
                     <section className="space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Sent · Pending</h4>{outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-3"><div><p className="text-xs font-bold">{request.receiverName || "Student"}</p><p className="font-mono text-[10px] text-slate-400">#{request.receiverCode}</p></div><span className="rounded-full bg-amber-900/40 px-2 py-1 text-[9px] text-amber-300">Pending</span></div>)}{outgoingRequests.length === 0 && <p className="text-[10px] text-slate-500">No pending sent requests.</p>}</section>
                   </div>}
-                </> : <section className="flex min-h-[390px] flex-col rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+                </> : <section className="study-room-chat flex flex-col rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
                   <div className="mb-3 flex items-center gap-2 border-b border-slate-800 pb-3"><button onClick={() => { setActiveRoom(null); setFirebaseError(""); }} className="rounded-lg p-1 text-slate-300 hover:bg-slate-800" aria-label="Back to chats"><ChevronLeft className="h-5 w-5"/></button><div className="min-w-0 flex-1"><h4 className="truncate text-sm font-bold">{activeRoom.name}</h4><p className="text-[10px] text-slate-400">{activeRoom.type === "subject" ? "Subject room · live" : "Study room · live"}</p></div>{activeRoom.inviteCode && <button onClick={() => { navigator.clipboard.writeText(activeRoom.inviteCode!); setRoomNotice(`Invite code ${activeRoom.inviteCode} copied.`); }} className="rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] text-indigo-200">{activeRoom.inviteCode}</button>}</div>
                   {roomNotice && <p className="mb-2 text-[10px] text-emerald-300">{roomNotice}</p>}{firebaseError && <p className="mb-2 rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
-                  <div className="flex-1 space-y-2 overflow-y-auto py-1">{chatMessages.map((message) => <div key={message.id} className={`max-w-[85%] rounded-xl px-3 py-2 ${message.senderId === firebaseUser?.uid ? "ml-auto bg-indigo-600 text-white" : "bg-slate-800 text-slate-100"}`}><p className="mb-1 text-[9px] font-bold opacity-75">{message.senderName || "Student"}</p><p className="whitespace-pre-wrap break-words text-xs">{message.text}</p>{message.createdAt && <p className="mt-1 text-right text-[8px] opacity-60">{message.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>}</div>)}{chatMessages.length === 0 && <p className="py-12 text-center text-xs text-slate-500">Say hello to start the conversation.</p>}</div>
+                  <div className="study-room-messages flex-1 space-y-2 overflow-y-auto py-1">{chatMessages.map((message) => <div key={message.id} className={`max-w-[85%] rounded-xl px-3 py-2 ${message.senderId === firebaseUser?.uid ? "ml-auto bg-indigo-600 text-white" : "bg-slate-800 text-slate-100"}`}><p className="mb-1 text-[9px] font-bold opacity-75">{message.senderName || "Student"}</p><p className="whitespace-pre-wrap break-words text-xs">{message.text}</p>{message.createdAt && <p className="mt-1 text-right text-[8px] opacity-60">{message.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>}</div>)}{chatMessages.length === 0 && <p className="py-12 text-center text-xs text-slate-500">Say hello to start the conversation.</p>}</div>
                   <form onSubmit={sendChatMessage} className="mt-3 flex gap-2 border-t border-slate-800 pt-3"><input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} placeholder="Write a message…" maxLength={2000} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"/><button disabled={!messageDraft.trim() || isSendingMessage} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"><ArrowRight className="h-4 w-4"/></button></form>
                 </section>}
               </div>
@@ -1758,15 +1930,25 @@ export default function App() {
               <div className="my-auto space-y-4">
                 <h3 className="text-lg font-bold">Account Settings</h3>
                 <div className={`p-4 rounded-2xl border space-y-3 ${darkMode ? "bg-slate-950/50 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-semibold">Username</span>
-                    <span className="text-xs font-mono text-indigo-400">{username || "Student"}</span>
+                  <form onSubmit={handleChangeUsername} className="space-y-2">
+                    <label htmlFor="account-username" className="block text-xs font-semibold">Change username</label>
+                    <div className="flex gap-2">
+                      <input id="account-username" value={accountUsernameDraft} onChange={(e) => setAccountUsernameDraft(e.target.value)} maxLength={24} placeholder="Choose a unique username" className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs ${darkMode ? "bg-slate-900 border-slate-700 text-white" : "bg-white border-slate-200 text-slate-900"}`} />
+                      <button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">Save</button>
+                    </div>
+                    <p className="text-[10px] text-slate-500">Usernames are unique, case-insensitive, and 2–24 characters.</p>
+                    {usernameNotice && <p role="status" className="text-xs text-indigo-300">{usernameNotice}</p>}
+                  </form>
+                  <div className="flex justify-between items-center border-t border-slate-800 pt-3">
+                    <span className="text-xs font-semibold">Current username</span>
+                    <span className="max-w-[60%] truncate text-xs font-mono text-indigo-400">{username || "Student"}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-semibold">Friend Code</span>
                     <span className="text-xs font-mono text-indigo-400">#{friendCode}</span>
                   </div>
                 </div>
+                <button onClick={() => void deleteProfile()} className="w-full rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-3 text-left text-xs font-bold text-rose-300 hover:bg-rose-950/60">Delete Profile</button>
               </div>
             )}
 
