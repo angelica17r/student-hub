@@ -33,7 +33,10 @@ import {
   Trash2,
   PlusCircle,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Image as ImageIcon,
+  BookmarkPlus,
+  NotebookPen
 } from "lucide-react";
 
 interface Task {
@@ -48,6 +51,10 @@ interface StudyNote {
   body: string;
   tags: string[];
   createdAt: number;
+  imageDataUrl?: string;
+  sourceRoomId?: string;
+  sourceRoomName?: string;
+  sourceMessageId?: string;
 }
 
 interface StudyRoom {
@@ -67,6 +74,19 @@ interface ChatMessage {
   senderName: string;
   senderCode: string;
   createdAt: Timestamp | null;
+  imageDataUrl?: string;
+}
+
+interface RoomNote {
+  id: string;
+  title: string;
+  body: string;
+  imageDataUrl?: string;
+  authorName: string;
+  authorId: string;
+  createdAt: Timestamp | null;
+  sourceMessageId?: string;
+  savedMessage?: boolean;
 }
 
 interface Subject {
@@ -264,7 +284,14 @@ export default function App() {
   const [rooms, setRooms] = useState<StudyRoom[]>([]);
   const [activeRoom, setActiveRoom] = useState<StudyRoom | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [roomNotes, setRoomNotes] = useState<RoomNote[]>([]);
+  const [activeRoomView, setActiveRoomView] = useState<"messages" | "notes">("messages");
   const [messageDraft, setMessageDraft] = useState("");
+  const [messageImageDraft, setMessageImageDraft] = useState("");
+  const [roomNoteTitle, setRoomNoteTitle] = useState("");
+  const [roomNoteBody, setRoomNoteBody] = useState("");
+  const [roomNoteImageDraft, setRoomNoteImageDraft] = useState("");
+  const [savedMessageIds, setSavedMessageIds] = useState<string[]>([]);
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [roomNameInput, setRoomNameInput] = useState("");
   const [roomNotice, setRoomNotice] = useState("");
@@ -445,6 +472,17 @@ export default function App() {
     }, (error) => setFirebaseError(error.message || "Could not load this chat."));
   }, [activeRoom?.id]);
 
+  useEffect(() => {
+    if (!activeRoom) { setRoomNotes([]); return; }
+    const roomNotesQuery = query(
+      collection(db, "studyRooms", activeRoom.id, "notes"),
+      orderBy("createdAt", "asc"), limit(100)
+    );
+    return onSnapshot(roomNotesQuery, (snapshot) => {
+      setRoomNotes(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as RoomNote)));
+    }, (error) => setFirebaseError(error.message || "Could not load group notes."));
+  }, [activeRoom?.id]);
+
   // Handle image upload preview
   const handlePfpUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -614,8 +652,15 @@ export default function App() {
   const allNoteTags = [...new Set(notes.flatMap((note) => note.tags))].sort();
   const filteredNotes = notes.filter((note) =>
     (activeNoteTag === "all" || note.tags.includes(activeNoteTag)) &&
-    `${note.title} ${note.body} ${note.tags.join(" ")}`.toLowerCase().includes(noteSearch.toLowerCase())
+    `${note.sourceRoomName || ""} ${note.title} ${note.body} ${note.tags.join(" ")}`.toLowerCase().includes(noteSearch.toLowerCase())
   );
+  const standaloneNotes = filteredNotes.filter((note) => !note.sourceRoomId);
+  const chatNoteGroups = Array.from(filteredNotes.filter((note) => note.sourceRoomId).reduce((groups, note) => {
+    const roomId = note.sourceRoomId!;
+    if (!groups.has(roomId)) groups.set(roomId, []);
+    groups.get(roomId)!.push(note);
+    return groups;
+  }, new Map<string, StudyNote[]>()));
 
   // --- SUBJECTS ACTIONS ---
   const [newSubName, setNewSubName] = useState("");
@@ -689,7 +734,7 @@ export default function App() {
       }
       if (!created) throw new Error("Could not reserve a unique invite code. Please try again.");
       setRooms((current) => [created!, ...current.filter((item) => item.id !== created!.id)]);
-      setActiveRoom(created);
+      setActiveRoom(created); setActiveRoomView("messages");
     } catch (error: any) { setFirebaseError(error?.message || "Could not create the study room."); }
   };
   const inviteFriendToRoom = async (room: StudyRoom, friend: FriendProfile) => {
@@ -721,7 +766,7 @@ export default function App() {
       const data = roomSnapshot.data();
       const room: StudyRoom = { id: roomId, name: data.name || "Study room", type: data.type || "group", inviteCode: code };
       setRooms((current) => [room, ...current.filter((item) => item.id !== room.id)]);
-      setActiveRoom(room); setInviteCodeInput(""); setRoomNotice("");
+      setActiveRoom(room); setActiveRoomView("messages"); setInviteCodeInput(""); setRoomNotice("");
     } catch (error: any) { setFirebaseError(error?.message || "Could not join the room."); }
   };
   const sendFriendRequest = async (e: React.FormEvent) => {
@@ -764,16 +809,109 @@ export default function App() {
     catch (error: any) { setFirebaseError(error?.message || "Could not update friend request."); }
   };
 
+  const readStudyImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) { reject(new Error("Choose an image file.")); return; }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read this image."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Could not open this image."));
+      image.onload = () => {
+        const scale = Math.min(1, 1400 / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) { reject(new Error("Image processing is unavailable.")); return; }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+        if (dataUrl.length > 650_000) { reject(new Error("That image is too large to attach. Choose a smaller image.")); return; }
+        resolve(dataUrl);
+      };
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const handleStudyImage = async (event: React.ChangeEvent<HTMLInputElement>, destination: "message" | "room-note") => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const dataUrl = await readStudyImage(file);
+      if (destination === "message") setMessageImageDraft(dataUrl);
+      else setRoomNoteImageDraft(dataUrl);
+      setFirebaseError("");
+    } catch (error: any) {
+      setFirebaseError(error?.message || "Could not attach this image.");
+    }
+  };
+
+  const saveMessageToNotes = async (message: ChatMessage) => {
+    if (!activeRoom || !firebaseUser) return;
+    const existingNote = notes.find((note) => note.sourceRoomId === activeRoom.id && note.sourceMessageId === message.id);
+    const sharedNoteId = `saved-message-${message.id}`;
+    try {
+      if (existingNote) {
+        setNotes((current) => current.filter((note) => !(note.sourceRoomId === activeRoom.id && note.sourceMessageId === message.id)));
+        await deleteDoc(doc(db, "studyRooms", activeRoom.id, "notes", sharedNoteId));
+        setFirebaseError("");
+        return;
+      }
+      const savedNote: StudyNote = {
+        id: `chat-${activeRoom.id}-${message.id}`,
+        title: `From ${message.senderName || "Student"}`,
+        body: message.text || "Image from study chat",
+        tags: ["chat", activeRoom.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "room")],
+        createdAt: Date.now(),
+        imageDataUrl: message.imageDataUrl,
+        sourceRoomId: activeRoom.id,
+        sourceRoomName: activeRoom.name,
+        sourceMessageId: message.id,
+      };
+      setNotes((current) => [savedNote, ...current]);
+      await setDoc(doc(db, "studyRooms", activeRoom.id, "notes", sharedNoteId), {
+        title: savedNote.title,
+        body: savedNote.body,
+        ...(message.imageDataUrl ? { imageDataUrl: message.imageDataUrl } : {}),
+        authorName: message.senderName || "Student",
+        authorId: message.senderId,
+        sourceMessageId: message.id,
+        savedMessage: true,
+        createdAt: serverTimestamp(),
+      });
+      setFirebaseError("");
+    } catch (error: any) {
+      setFirebaseError(error?.message || "Could not update the saved message.");
+    }
+  };
+
+  const addRoomNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRoom || !firebaseUser || (!roomNoteTitle.trim() && !roomNoteBody.trim() && !roomNoteImageDraft)) return;
+    try {
+      await addDoc(collection(db, "studyRooms", activeRoom.id, "notes"), {
+        title: roomNoteTitle.trim() || "Group note",
+        body: roomNoteBody.trim(),
+        ...(roomNoteImageDraft ? { imageDataUrl: roomNoteImageDraft } : {}),
+        authorName: username.trim() || "Student",
+        authorId: firebaseUser.uid,
+        createdAt: serverTimestamp(),
+      });
+      setRoomNoteTitle(""); setRoomNoteBody(""); setRoomNoteImageDraft(""); setFirebaseError("");
+    } catch (error: any) { setFirebaseError(error?.message || "Could not save the group note."); }
+  };
+
   const sendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeRoom || !firebaseUser || !messageDraft.trim() || isSendingMessage) return;
-    const text = messageDraft.trim(); setIsSendingMessage(true); setMessageDraft("");
+    if (!activeRoom || !firebaseUser || (!messageDraft.trim() && !messageImageDraft) || isSendingMessage) return;
+    const text = messageDraft.trim(); const imageDataUrl = messageImageDraft; setIsSendingMessage(true); setMessageDraft(""); setMessageImageDraft("");
     try {
       await addDoc(collection(db, "studyRooms", activeRoom.id, "messages"), {
-        text, senderId: firebaseUser.uid, senderName: username.trim() || "Student", senderCode: friendCode,
+        text, ...(imageDataUrl ? { imageDataUrl } : {}), senderId: firebaseUser.uid, senderName: username.trim() || "Student", senderCode: friendCode,
         createdAt: serverTimestamp()
       });
-    } catch (error: any) { setMessageDraft(text); setFirebaseError(error?.message || "Message could not be sent."); }
+    } catch (error: any) { setMessageDraft(text); setMessageImageDraft(imageDataUrl); setFirebaseError(error?.message || "Message could not be sent."); }
     finally { setIsSendingMessage(false); }
   };
 
@@ -960,7 +1098,10 @@ export default function App() {
           max-height: 100%;
           min-height: 0 !important;
           flex: 1 1 0%;
+          overflow: hidden;
         }
+        .study-chat-open .study-room-messages { min-height: 0; }
+        .chat-tab-open { min-height: 0; }
         .study-room-messages {
           min-height: 0;
           overscroll-behavior: contain;
@@ -1678,8 +1819,8 @@ export default function App() {
 
             {/* CHAT TAB: Firebase-powered study rooms and live messages */}
             {homeTab === "chat" && (
-              <div className="chat-tab my-auto space-y-5">
-                <div><h3 className="text-lg font-bold">Study Chats</h3><p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Create a room, share its 6-character code, and message in real time.</p></div>
+              <div className={`chat-tab ${activeRoom ? "chat-tab-open" : "my-auto space-y-5"}`}>
+                {!activeRoom && <div><h3 className="text-lg font-bold">Study Chats</h3><p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Create a room, share its 6-character code, and message in real time.</p></div>}
                 {!activeRoom ? <>
                   <div className="flex gap-2 rounded-xl border border-slate-800 bg-slate-950 p-1"><button onClick={() => setChatHomeView("rooms")} className={`flex-1 rounded-lg py-2 text-xs font-bold ${chatHomeView === "rooms" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Study Rooms</button><button onClick={() => setChatHomeView("friends")} className={`flex-1 rounded-lg py-2 text-xs font-bold ${chatHomeView === "friends" ? "bg-indigo-600 text-white" : "text-slate-400"}`}>Friends {incomingRequests.length ? `(${incomingRequests.length})` : ""}</button></div>
                   {chatHomeView === "rooms" ? <>
@@ -1694,7 +1835,7 @@ export default function App() {
                   </form>
                   {roomNotice && <p className="text-xs text-amber-300">{roomNotice}</p>}
                   {firebaseError && <p className="rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
-                  <div className="space-y-2">{rooms.map((room) => <div key={room.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><div className="flex items-center justify-between gap-2"><button onClick={() => setActiveRoom(room)} className="flex min-w-0 flex-1 items-center gap-3 text-left"><span className="rounded-lg bg-indigo-600/20 p-2 text-indigo-200"><MessageSquare className="h-4 w-4"/></span><span className="min-w-0"><span className="block truncate text-xs font-bold">{room.name}</span><span className="text-[10px] text-slate-400">Study group</span></span></button><div className="flex shrink-0 items-center gap-1">{room.inviteCode && <button onClick={() => { void navigator.clipboard.writeText(room.inviteCode!); setRoomNotice(`Room code ${room.inviteCode} copied.`); }} aria-label={`Copy room code ${room.inviteCode}`} className="rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] tracking-wider text-indigo-200">Code {room.inviteCode}</button>}<button onClick={() => { setInviteRoomId(inviteRoomId === room.id ? null : room.id); setRoomNotice(""); }} className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1.5 text-[10px] font-bold text-white"><Users className="h-3 w-3"/>Invite</button></div></div>{inviteRoomId === room.id && <div className="mt-3 space-y-2 border-t border-slate-800 pt-3"><p className="text-[10px] font-semibold text-slate-400">Add a friend to {room.name}</p>{friendProfiles.length ? friendProfiles.map((friend) => <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-lg bg-slate-900 px-3 py-2"><span className="truncate text-xs">{friend.username} <span className="font-mono text-[10px] text-slate-500">#{friend.friendCode}</span></span><button onClick={() => void inviteFriendToRoom(room, friend)} className="shrink-0 rounded-md border border-indigo-400/30 px-2 py-1 text-[10px] font-bold text-indigo-200">Add to room</button></div>) : <p className="text-[10px] text-slate-500">Accept friend requests first, then you can add friends here.</p>}</div>}</div>)}{rooms.length === 0 && <div className={`rounded-2xl border-2 border-dashed py-8 text-center ${darkMode ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-400"}`}><MessageSquare className="mx-auto mb-2 h-8 w-8 opacity-40"/><p className="text-xs">No study rooms yet. Create one or join with a code.</p></div>}</div>
+                  <div className="space-y-2">{rooms.map((room) => <div key={room.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><div className="flex items-center justify-between gap-2"><button onClick={() => { setActiveRoom(room); setActiveRoomView("messages"); }} className="flex min-w-0 flex-1 items-center gap-3 text-left"><span className="rounded-lg bg-indigo-600/20 p-2 text-indigo-200"><MessageSquare className="h-4 w-4"/></span><span className="min-w-0"><span className="block truncate text-xs font-bold">{room.name}</span><span className="text-[10px] text-slate-400">Study group</span></span></button><div className="flex shrink-0 items-center gap-1">{room.inviteCode && <button onClick={() => { void navigator.clipboard.writeText(room.inviteCode!); setRoomNotice(`Room code ${room.inviteCode} copied.`); }} aria-label={`Copy room code ${room.inviteCode}`} className="rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] tracking-wider text-indigo-200">Code {room.inviteCode}</button>}<button onClick={() => { setInviteRoomId(inviteRoomId === room.id ? null : room.id); setRoomNotice(""); }} className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1.5 text-[10px] font-bold text-white"><Users className="h-3 w-3"/>Invite</button></div></div>{inviteRoomId === room.id && <div className="mt-3 space-y-2 border-t border-slate-800 pt-3"><p className="text-[10px] font-semibold text-slate-400">Add a friend to {room.name}</p>{friendProfiles.length ? friendProfiles.map((friend) => <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-lg bg-slate-900 px-3 py-2"><span className="truncate text-xs">{friend.username} <span className="font-mono text-[10px] text-slate-500">#{friend.friendCode}</span></span><button onClick={() => void inviteFriendToRoom(room, friend)} className="shrink-0 rounded-md border border-indigo-400/30 px-2 py-1 text-[10px] font-bold text-indigo-200">Add to room</button></div>) : <p className="text-[10px] text-slate-500">Accept friend requests first, then you can add friends here.</p>}</div>}</div>)}{rooms.length === 0 && <div className={`rounded-2xl border-2 border-dashed py-8 text-center ${darkMode ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-400"}`}><MessageSquare className="mx-auto mb-2 h-8 w-8 opacity-40"/><p className="text-xs">No study rooms yet. Create one or join with a code.</p></div>}</div>
                   </> : <div className="space-y-4">
                     <form onSubmit={sendFriendRequest} className="space-y-2 rounded-2xl border border-indigo-500/25 bg-slate-950/50 p-3"><label className="block text-xs font-semibold">Find a friend by their 6-digit code</label><div className="flex gap-2"><input value={friendCodeSearch} onChange={(e) => setFriendCodeSearch(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter friend code" maxLength={6} inputMode="numeric" className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-xs tracking-widest text-white"/><button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">Send Request</button></div>{friendNotice && <p className="text-[10px] text-indigo-200">{friendNotice}</p>}</form>
                     {firebaseError && <p className="rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
@@ -1703,10 +1844,42 @@ export default function App() {
                     <section className="space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Sent · Pending</h4>{outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-3"><div><p className="text-xs font-bold">{request.receiverName || "Student"}</p><p className="font-mono text-[10px] text-slate-400">#{request.receiverCode}</p></div><span className="rounded-full bg-amber-900/40 px-2 py-1 text-[9px] text-amber-300">Pending</span></div>)}{outgoingRequests.length === 0 && <p className="text-[10px] text-slate-500">No pending sent requests.</p>}</section>
                   </div>}
                 </> : <section className="study-room-chat flex flex-col rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
-                  <div className="mb-3 flex items-center gap-2 border-b border-slate-800 pb-3"><button onClick={() => { setActiveRoom(null); setFirebaseError(""); }} className="rounded-lg p-1 text-slate-300 hover:bg-slate-800" aria-label="Back to chats"><ChevronLeft className="h-5 w-5"/></button><div className="min-w-0 flex-1"><h4 className="truncate text-sm font-bold">{activeRoom.name}</h4><p className="text-[10px] text-slate-400">{activeRoom.type === "subject" ? "Subject room · live" : "Study room · live"}</p></div>{activeRoom.inviteCode && <button onClick={() => { navigator.clipboard.writeText(activeRoom.inviteCode!); setRoomNotice(`Invite code ${activeRoom.inviteCode} copied.`); }} className="rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] text-indigo-200">{activeRoom.inviteCode}</button>}</div>
-                  {roomNotice && <p className="mb-2 text-[10px] text-emerald-300">{roomNotice}</p>}{firebaseError && <p className="mb-2 rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
-                  <div className="study-room-messages flex-1 space-y-2 overflow-y-auto py-1">{chatMessages.map((message) => <div key={message.id} className={`max-w-[85%] rounded-xl px-3 py-2 ${message.senderId === firebaseUser?.uid ? "ml-auto bg-indigo-600 text-white" : "bg-slate-800 text-slate-100"}`}><p className="mb-1 text-[9px] font-bold opacity-75">{message.senderName || "Student"}</p><p className="whitespace-pre-wrap break-words text-xs">{message.text}</p>{message.createdAt && <p className="mt-1 text-right text-[8px] opacity-60">{message.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>}</div>)}{chatMessages.length === 0 && <p className="py-12 text-center text-xs text-slate-500">Say hello to start the conversation.</p>}</div>
-                  <form onSubmit={sendChatMessage} className="mt-3 flex gap-2 border-t border-slate-800 pt-3"><input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} placeholder="Write a message…" maxLength={2000} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"/><button disabled={!messageDraft.trim() || isSendingMessage} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"><ArrowRight className="h-4 w-4"/></button></form>
+                  <div className="mb-2 flex shrink-0 items-center gap-2 border-b border-slate-800 pb-2">
+                    <button onClick={() => { setActiveRoom(null); setActiveRoomView("messages"); setFirebaseError(""); }} className="rounded-lg p-1 text-slate-300 hover:bg-slate-800" aria-label="Back to chats"><ChevronLeft className="h-5 w-5"/></button>
+                    <button onClick={() => setActiveRoomView(activeRoomView === "notes" ? "messages" : "notes")} className="min-w-0 flex-1 text-left" title="Open this group’s shared notes">
+                      <h4 className="truncate text-sm font-bold">{activeRoom.name} <span className="text-[10px] font-medium text-indigo-300">· {activeRoomView === "notes" ? "Group notes" : "Messages"}</span></h4>
+                      <p className="text-[10px] text-slate-400">Click group name to switch between messages and shared notes</p>
+                    </button>
+                    {activeRoom.inviteCode && <button onClick={() => { void navigator.clipboard.writeText(activeRoom.inviteCode!); setRoomNotice(`Invite code ${activeRoom.inviteCode} copied.`); }} className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 font-mono text-[10px] text-indigo-200">{activeRoom.inviteCode}</button>}
+                  </div>
+                  {roomNotice && <p className="mb-1 shrink-0 text-[10px] text-emerald-300">{roomNotice}</p>}{firebaseError && <p className="mb-1 shrink-0 rounded-lg bg-rose-950/50 p-2 text-xs text-rose-300">{firebaseError}</p>}
+                  {activeRoomView === "messages" ? <>
+                    <div className="study-room-messages flex-1 space-y-2 overflow-y-auto py-1">
+                      {chatMessages.map((message) => <div key={message.id} className={`group flex max-w-[95%] items-start gap-1 ${message.senderId === firebaseUser?.uid ? "ml-auto flex-row-reverse" : ""}`}>
+                        <div className={`min-w-0 rounded-xl px-3 py-2 ${message.senderId === firebaseUser?.uid ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-100"}`}>
+                          <p className="mb-1 text-[9px] font-bold opacity-75">{message.senderName || "Student"}</p>
+                          {message.imageDataUrl && <img src={message.imageDataUrl} alt="Shared notes" className="mb-2 max-h-64 max-w-full rounded-lg object-contain"/>}
+                          {message.text && <p className="whitespace-pre-wrap break-words text-xs">{message.text}</p>}
+                          <div className="mt-1 flex items-center justify-between gap-3"><span className="text-[8px] opacity-60">{message.createdAt?.toDate ? message.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><button type="button" onClick={() => void saveMessageToNotes(message)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-semibold opacity-80 hover:bg-white/10" title={notes.some((note) => note.sourceRoomId === activeRoom?.id && note.sourceMessageId === message.id) ? "Remove from saved notes" : "Save this message to notes"}><BookmarkPlus className="h-3 w-3"/>{notes.some((note) => note.sourceRoomId === activeRoom?.id && note.sourceMessageId === message.id) ? "Saved" : "Save"}</button></div>
+                        </div>
+                      </div>)}
+                      {chatMessages.length === 0 && <p className="py-12 text-center text-xs text-slate-500">Say hello to start the conversation.</p>}
+                    </div>
+                    {messageImageDraft && <div className="flex shrink-0 items-center gap-2 border-t border-slate-800 py-2"><img src={messageImageDraft} alt="Image ready to send" className="h-12 w-12 rounded-lg object-cover"/><span className="flex-1 text-[10px] text-slate-400">Image attached</span><button type="button" onClick={() => setMessageImageDraft("")} className="rounded p-1 text-slate-400 hover:text-rose-300" aria-label="Remove attached image"><XCircle className="h-4 w-4"/></button></div>}
+                    <form onSubmit={sendChatMessage} className="mt-2 flex shrink-0 items-center gap-2 border-t border-slate-800 pt-2">
+                      <label className="cursor-pointer rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" title="Upload a photo of notes"><ImageIcon className="h-4 w-4"/><input type="file" accept="image/*" onChange={(event) => void handleStudyImage(event, "message")} className="hidden"/></label>
+                      <input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} placeholder="Write a message…" maxLength={2000} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"/>
+                      <button disabled={(!messageDraft.trim() && !messageImageDraft) || isSendingMessage} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"><ArrowRight className="h-4 w-4"/></button>
+                    </form>
+                  </> : <>
+                    <form onSubmit={addRoomNote} className="shrink-0 space-y-2 border-b border-slate-800 pb-3">
+                      <input value={roomNoteTitle} onChange={(e) => setRoomNoteTitle(e.target.value)} placeholder="Group note title" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"/>
+                      <textarea value={roomNoteBody} onChange={(e) => setRoomNoteBody(e.target.value)} placeholder="Share notes with this group…" rows={2} className="w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"/>
+                      {roomNoteImageDraft && <div className="flex items-center gap-2"><img src={roomNoteImageDraft} alt="Group note attachment" className="h-12 w-12 rounded-lg object-cover"/><button type="button" onClick={() => setRoomNoteImageDraft("")} className="text-[10px] text-rose-300">Remove image</button></div>}
+                      <div className="flex justify-between gap-2"><label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-700 px-3 py-2 text-[10px] font-semibold"><ImageIcon className="h-3.5 w-3.5"/>Add photo<input type="file" accept="image/*" onChange={(event) => void handleStudyImage(event, "room-note")} className="hidden"/></label><button type="submit" disabled={!roomNoteTitle.trim() && !roomNoteBody.trim() && !roomNoteImageDraft} className="rounded-lg bg-indigo-600 px-3 py-2 text-[10px] font-bold text-white disabled:opacity-50"><NotebookPen className="mr-1 inline h-3.5 w-3.5"/>Add group note</button></div>
+                    </form>
+                    <div className="study-room-messages flex-1 space-y-2 overflow-y-auto py-2">{roomNotes.map((note) => <article key={note.id} className="rounded-xl border border-slate-800 bg-slate-900/80 p-3"><div className="flex items-center justify-between gap-2"><h5 className="text-xs font-bold">{note.title}</h5><span className="text-[9px] text-slate-400">{note.authorName}{note.savedMessage ? " · saved chat message" : ""}</span></div>{note.imageDataUrl && <img src={note.imageDataUrl} alt="Group study note" className="mt-2 max-h-64 rounded-lg object-contain"/>}{note.body && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-200">{note.body}</p>}</article>)}{roomNotes.length === 0 && <p className="py-10 text-center text-xs text-slate-500">No shared notes yet. Add the first note for this group.</p>}</div>
+                  </>}
                 </section>}
               </div>
             )}
@@ -1795,7 +1968,11 @@ export default function App() {
                           <div className="flex gap-2"><input value={noteTagsInput} onChange={(e) => setNoteTagsInput(e.target.value)} placeholder="Tags: exam, homework, important" className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white" /><button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white"><Plus className="mr-1 inline h-4 w-4"/>Save</button></div>
                         </form>
                         <div className="flex gap-2"><input value={noteSearch} onChange={(e) => setNoteSearch(e.target.value)} placeholder="Search notes or tags…" className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white" /><select value={activeNoteTag} onChange={(e) => setActiveNoteTag(e.target.value)} className="max-w-36 rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-white"><option value="all">All tags</option>{allNoteTags.map((tag) => <option key={tag} value={tag}>#{tag}</option>)}</select></div>
-                        <div className="space-y-2">{filteredNotes.map((note) => <article key={note.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="text-xs font-bold text-slate-100">{note.title}</h4>{note.body && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{note.body}</p>}</div><button onClick={() => deleteNote(note.id)} aria-label="Delete note" className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4"/></button></div>{note.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{note.tags.map((tag) => <button key={tag} onClick={() => setActiveNoteTag(tag)} className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">#{tag}</button>)}</div>}</article>)}{filteredNotes.length === 0 && <p className="py-6 text-center text-xs text-slate-500">No notes match this filter yet.</p>}</div>
+                        <div className="space-y-3">
+                          {standaloneNotes.map((note) => <article key={note.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="text-xs font-bold text-slate-100">{note.title}</h4>{note.imageDataUrl && <img src={note.imageDataUrl} alt="Saved note attachment" className="mt-2 max-h-56 rounded-lg object-contain"/>}{note.body && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{note.body}</p>}</div><button onClick={() => deleteNote(note.id)} aria-label="Delete note" className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4"/></button></div>{note.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{note.tags.map((tag) => <button key={tag} onClick={() => setActiveNoteTag(tag)} className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">#{tag}</button>)}</div>}</article>)}
+                          {chatNoteGroups.map(([roomId, roomGroupNotes]) => <section key={roomId} className="space-y-2 rounded-xl border border-indigo-400/20 bg-indigo-950/20 p-2"><h4 className="px-1 text-[10px] font-bold uppercase tracking-wide text-indigo-200">{roomGroupNotes[0]?.sourceRoomName || "Study chat"}</h4>{roomGroupNotes.map((note) => <article key={note.id} className="rounded-lg border border-slate-800 bg-slate-950 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="text-xs font-bold text-slate-100">{note.title}</h4>{note.imageDataUrl && <img src={note.imageDataUrl} alt="Saved chat attachment" className="mt-2 max-h-56 rounded-lg object-contain"/>}{note.body && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{note.body}</p>}</div><button onClick={() => deleteNote(note.id)} aria-label="Delete saved note" className="text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4"/></button></div>{note.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{note.tags.map((tag) => <button key={tag} onClick={() => setActiveNoteTag(tag)} className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-200">#{tag}</button>)}</div>}</article>)}</section>)}
+                          {filteredNotes.length === 0 && <p className="py-6 text-center text-xs text-slate-500">No notes match this filter yet.</p>}
+                        </div>
                       </div>}
                     </div>
                   )}
