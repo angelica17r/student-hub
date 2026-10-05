@@ -1637,6 +1637,9 @@ export default function App() {
           .study-home-header { padding-right: 3.5rem; gap: .35rem; margin-top: 4.25rem !important; }
           .study-sync-panel > button[aria-label="Toggle Theme"] { top: calc(2.75rem + env(safe-area-inset-top)) !important; }
           .study-home-header > div:first-child { min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; gap: .5rem; }
+          .study-tab-chat .study-home-header > div:first-child > div:nth-child(2),
+          .study-tab-academics .study-home-header > div:first-child > div:nth-child(2),
+          .study-tab-account .study-home-header > div:first-child > div:nth-child(2) { display: none; }
         }
         @media (min-width: 1024px) {
           .study-auth-layout {
@@ -2007,7 +2010,7 @@ export default function App() {
 
         {/* ================= SCREEN 3: HOME SCREEN (3 MAIN BUBBLES/CARDS) ================= */}
         {screen === "home" && (
-          <div className={`study-home flex-1 flex flex-col justify-between p-6 lg:p-10 ${homeTab === "chat" && activeRoom ? "study-chat-open" : ""} ${homeTab === "academics" ? "study-academics-open" : ""}`}>
+          <div className={`study-home study-tab-${homeTab} flex-1 flex flex-col justify-between p-6 lg:p-10 ${homeTab === "chat" && activeRoom ? "study-chat-open" : ""} ${homeTab === "academics" ? "study-academics-open" : ""}`}>
             
             {/* Header with Back button (>) if inside a tab */}
             <div className="study-home-header flex items-center justify-between mt-2">
