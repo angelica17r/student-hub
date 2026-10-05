@@ -1229,50 +1229,7 @@ export default function App() {
           .study-sync-chat-shell .study-sync-panel.study-chat-active { height: 100vh !important; min-height: 100vh !important; max-height: 100vh !important; }
           .pixel-room-scene { height: 100vh; }
         }
-        .theme-day .pixel-room-scene {
-          --study-room-background: none;
-          background-image:
-            linear-gradient(180deg, rgba(255,241,231,.08), rgba(82,43,91,.10)),
-            linear-gradient(180deg, #f7d8b7 0%, #f6cda8 52%, #d9b4c6 100%);
-          background-size: 100% 100%;
-          background-position: center;
-          background-repeat: no-repeat;
-        }
-        /* Gentle drifting mist stays in the scenery layer and never blocks controls. */
-        .theme-day .pixel-room-scene::before,
-        .theme-day .pixel-room-scene::after {
-          content: "";
-          position: absolute;
-          pointer-events: none;
-          z-index: 1;
-          width: clamp(150px, 22vw, 340px);
-          height: clamp(44px, 7vw, 96px);
-          left: -30%;
-          top: 23%;
-          border-radius: 50%;
-          opacity: .25;
-          filter: blur(13px);
-          background: radial-gradient(ellipse at 20% 60%, rgba(255,241,231,.86) 0 24%, transparent 58%),
-                      radial-gradient(ellipse at 52% 42%, rgba(251,228,216,.82) 0 28%, transparent 62%),
-                      radial-gradient(ellipse at 82% 64%, rgba(223,182,210,.7) 0 22%, transparent 58%);
-          animation: mist-cloud-drift 52s linear infinite;
-        }
-        .theme-day .pixel-room-scene::after {
-          top: 34%;
-          width: clamp(120px, 17vw, 260px);
-          height: clamp(36px, 5vw, 68px);
-          opacity: .2;
-          animation-duration: 68s;
-          animation-delay: -31s;
-        }
-        @keyframes mist-cloud-drift {
-          from { transform: translateX(0); }
-          to { transform: translateX(150vw); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .theme-day .pixel-room-scene::before,
-          .theme-day .pixel-room-scene::after { animation: none; }
-        }
+        /* Light mode uses the same embedded night-room artwork as dark mode. */
         .study-sync-panel > :not(.pixel-room-scene):not(button) { position: relative; z-index: 1; }
         .study-sync-panel {
           position: relative;
