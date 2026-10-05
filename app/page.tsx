@@ -1625,17 +1625,17 @@ export default function App() {
           .study-home-header { padding: 2rem; }
           .study-home > div.space-y-4.my-auto { padding: 2rem 3rem; }
         }
-        .home-logout-mobile, .phone-study-sync-wordmark { display: none; }
+        .phone-study-sync-wordmark { display: none; }
         .home-sidebar-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
         .home-study-sync-wordmark { color: #dfb6d2; font-size: 1rem; font-weight: 800; letter-spacing: .04em; }
         .theme-day .home-study-sync-wordmark { color: #704366; }
         .phone-study-sync-wordmark { display: none; font-size: .78rem; line-height: 1; font-weight: 800; letter-spacing: .025em; white-space: nowrap; color: #dfb6d2; }
         .theme-day .phone-study-sync-wordmark { color: #704366; }
         @media (max-width: 767px) {
-          .home-logout-mobile { display: inline-flex; flex: 0 0 auto; }
           .home-sidebar-footer { display: none; }
           .phone-study-sync-wordmark { display: inline-block; flex: 0 0 auto; margin-left: auto; margin-right: .5rem; }
-          .study-home-header { padding-right: 3.5rem; gap: .35rem; }
+          .study-home-header { padding-right: 3.5rem; gap: .35rem; margin-top: 4.25rem !important; }
+          .study-sync-panel > button[aria-label="Toggle Theme"] { top: calc(2.75rem + env(safe-area-inset-top)) !important; }
           .study-home-header > div:first-child { min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; gap: .5rem; }
         }
         @media (min-width: 1024px) {
@@ -2030,36 +2030,29 @@ export default function App() {
                     <User className={`w-5 h-5 ${darkMode ? "text-slate-400" : "text-slate-600"}`} />
                   )}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex flex-col items-start gap-1">
                   <h2 className="font-bold text-base leading-tight truncate">
                     {username || "Student"}
                   </h2>
                   <span className={`text-[11px] font-mono ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                     #{friendCode}
                   </span>
+                  <button
+                    onClick={handleLogout}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -ml-2 text-xs font-medium text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                    title="Sign out"
+                    aria-label="Sign out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sign out</span>
+                  </button>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="home-logout-mobile p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
-                  title="Sign out"
-                  aria-label="Sign out"
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
               </div>
 
               <span className="phone-study-sync-wordmark" aria-label="StudySync">StudySync</span>
 
               <div className="home-sidebar-footer">
                 <span className="home-study-sync-wordmark">StudySync</span>
-                <button
-                  onClick={handleLogout}
-                  className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
-                  title="Sign out"
-                  aria-label="Sign out"
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
               </div>
             </div>
 
