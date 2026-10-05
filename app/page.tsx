@@ -1341,37 +1341,58 @@ export default function App() {
             24px 48px #fbe4d8, 36px 48px #fbe4d8;
           opacity: .72;
         }
-        /* Night-sky details sit over the existing room art, only in night mode. */
-        .theme-night .pixel-room-scene::before {
-          content: "";
-          position: absolute;
-          inset: 0 0 auto;
-          height: 52%;
-          z-index: 1;
-          pointer-events: none;
-          background-image:
-            radial-gradient(circle at 12% 18%, rgba(251,228,216,.95) 0 1.5px, transparent 2.5px),
-            radial-gradient(circle at 25% 34%, rgba(223,182,210,.9) 0 1px, transparent 2px),
-            radial-gradient(circle at 38% 13%, rgba(251,228,216,.9) 0 1px, transparent 2px),
-            radial-gradient(circle at 53% 28%, rgba(223,182,210,.92) 0 1.5px, transparent 2.5px),
-            radial-gradient(circle at 67% 16%, rgba(251,228,216,.88) 0 1px, transparent 2px),
-            radial-gradient(circle at 82% 35%, rgba(223,182,210,.9) 0 1px, transparent 2px),
-            radial-gradient(circle at 94% 12%, rgba(251,228,216,.9) 0 1px, transparent 2px),
-            radial-gradient(ellipse at 76% 20%, rgba(223,182,210,.16), transparent 22%);
-          background-repeat: no-repeat;
+        /* ================= ANIMATED NIGHT SKY OUTSIDE WINDOW ================= */
+        @keyframes star-twinkle {
+          0%, 100% { opacity: .24; transform: scale(.72); }
+          48% { opacity: 1; transform: scale(1.18); }
+          65% { opacity: .58; transform: scale(.9); }
         }
-        .theme-night .pixel-room-scene::after {
-          content: "";
+        @keyframes moon-breathe {
+          0%, 100% { opacity: .88; filter: drop-shadow(0 0 9px rgba(255, 235, 180, .7)); }
+          50% { opacity: 1; filter: drop-shadow(0 0 18px rgba(255, 240, 195, .95)); }
+        }
+        @keyframes cloud-drift-a {
+          from { transform: translateX(-220px); }
+          to { transform: translateX(980px); }
+        }
+        @keyframes cloud-drift-b {
+          from { transform: translateX(960px); }
+          to { transform: translateX(-260px); }
+        }
+        .night-window-overlay {
           position: absolute;
-          top: 10%;
-          right: 21%;
-          width: clamp(52px, 6vw, 78px);
-          aspect-ratio: 1;
-          z-index: 2;
+          inset: 0;
+          width: 100%;
+          height: 100%;
           pointer-events: none;
-          background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23fff1d2' d='M46.2 5.1a27.2 27.2 0 1 0 12.7 46.1A25 25 0 0 1 46.2 5.1Z'/%3E%3C/svg%3E") center / contain no-repeat;
-          filter: drop-shadow(0 0 9px rgba(255,241,210,.48));
-          opacity: .96;
+          z-index: 1;
+        }
+        .night-scene-moon {
+          fill: #fdf0cd;
+          animation: moon-breathe 7s ease-in-out infinite;
+          transform-origin: 668px 50px;
+        }
+        .night-scene-moon-shade { fill: rgba(200, 175, 140, .45); }
+        .night-scene-star {
+          fill: #fff7d6;
+          animation: star-twinkle var(--twinkle-duration, 3.8s) ease-in-out var(--twinkle-delay, 0s) infinite;
+          transform-box: fill-box;
+          transform-origin: center;
+        }
+        .night-scene-cloud-a {
+          fill: rgba(185, 150, 195, .38);
+          animation: cloud-drift-a 52s linear infinite;
+        }
+        .night-scene-cloud-b {
+          fill: rgba(185, 150, 195, .25);
+          animation: cloud-drift-b 68s linear -31s infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .night-scene-moon,
+          .night-scene-star,
+          .night-scene-cloud-a,
+          .night-scene-cloud-b { animation: none; }
+          .night-scene-star { opacity: .72; }
         }
         .theme-night .study-sync-panel {
           background: linear-gradient(160deg, rgba(43,18,76,.91), rgba(25,0,25,.92));
@@ -1801,7 +1822,60 @@ export default function App() {
         className={`study-sync-scene theme-${darkMode ? "night" : "day"} study-sync-panel w-full max-w-md min-h-[720px] lg:max-w-7xl lg:min-h-[calc(100vh-4rem)] rounded-3xl shadow-2xl border flex flex-col relative overflow-hidden transition-colors duration-300 ${screen === "home" && homeTab === "chat" && activeRoom ? "study-chat-active" : ""}`}
       >
         {/* Full-scale study-room image fills the app background */}
-        <div className="pixel-room-scene" aria-hidden="true" />
+        <div className="pixel-room-scene" aria-hidden="true">
+          {darkMode && (
+            <svg className="night-window-overlay" viewBox="0 0 921 514" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <defs>
+                <clipPath id="window-panes">
+                  <path d="M184 0h128v82H184zM321 0h118v82H321zM466 0h136v82H466zM611 0h127v82H611zM184 94h128v143H184zM321 94h118v143H321zM466 94h136v143H466zM611 94h127v143H611zM184 249h128v103H184zM321 249h118v103H321zM466 249h136v103H466zM611 249h127v103H611z" />
+                </clipPath>
+                <filter id="soft-cloud" x="-20%" y="-40%" width="140%" height="180%">
+                  <feGaussianBlur stdDeviation="4" />
+                </filter>
+              </defs>
+              <g clipPath="url(#window-panes)">
+                <g className="night-scene-moon">
+                  <circle cx="669" cy="48" r="24" />
+                  <circle className="night-scene-moon-shade" cx="658" cy="40" r="4" />
+                  <circle className="night-scene-moon-shade" cx="677" cy="56" r="6" />
+                  <circle className="night-scene-moon-shade" cx="681" cy="36" r="3" />
+                </g>
+                {([
+                  [210, 26, 2.1, "3.2s", "-.4s"], [255, 58, 1.6, "4.7s", "-2.1s"],
+                  [289, 22, 1.2, "3.8s", "-1.6s"], [342, 48, 2, "4.2s", "-.8s"],
+                  [387, 22, 1.3, "5.1s", "-3.2s"], [421, 67, 1.8, "3.5s", "-1.1s"],
+                  [489, 27, 1.4, "4.6s", "-2.5s"], [536, 59, 2, "3.4s", "-.2s"],
+                  [579, 31, 1.2, "5.3s", "-3.8s"], [626, 68, 1.7, "4s", "-1.9s"],
+                  [710, 25, 1.4, "3.6s", "-2.8s"], [229, 116, 1.5, "4.3s", "-1.3s"],
+                  [276, 149, 2.2, "3.7s", "-.7s"], [352, 119, 1.4, "5s", "-3.1s"],
+                  [403, 175, 1.8, "4.4s", "-2s"], [491, 135, 1.3, "3.3s", "-.9s"],
+                  [551, 111, 2, "4.9s", "-2.7s"], [622, 151, 1.5, "3.9s", "-1.5s"],
+                  [694, 116, 2, "4.5s", "-.3s"], [214, 274, 1.6, "4.1s", "-2.3s"],
+                  [289, 307, 1.2, "3.5s", "-1s"], [374, 273, 1.9, "5.2s", "-3.4s"],
+                  [522, 288, 1.5, "3.8s", "-1.8s"], [603, 266, 2.1, "4.6s", "-.6s"],
+                  [707, 307, 1.3, "4s", "-2.9s"],
+                ] as [number, number, number, string, string][]).map(([cx, cy, r, duration, delay]) => (
+                  <circle
+                    key={`${cx}-${cy}`}
+                    className="night-scene-star"
+                    cx={cx}
+                    cy={cy}
+                    r={r}
+                    style={{ "--twinkle-duration": duration, "--twinkle-delay": delay } as React.CSSProperties}
+                  />
+                ))}
+                <g className="night-scene-cloud-a" filter="url(#soft-cloud)">
+                  <path d="M-185 125c15-22 36-27 54-15 11-27 50-30 65-5 25-10 52 8 52 31H-185z" />
+                  <path d="M-310 205c18-25 48-25 63-6 15-35 66-34 80 0 31-12 65 11 64 38h-207z" />
+                </g>
+                <g className="night-scene-cloud-b" filter="url(#soft-cloud)">
+                  <path d="M0 84c15-23 43-25 59-7 14-31 57-33 75-5 29-10 58 10 59 35H0z" />
+                  <path d="M92 181c13-20 38-23 53-7 12-28 51-29 67-4 25-9 52 9 52 32H92z" />
+                </g>
+              </g>
+            </svg>
+          )}
+        </div>
 
         {/* Global Dark/Light Mode Toggle */}
         <button
