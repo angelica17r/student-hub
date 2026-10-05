@@ -1629,13 +1629,14 @@ export default function App() {
         .home-sidebar-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
         .home-study-sync-wordmark { color: #dfb6d2; font-size: 1rem; font-weight: 800; letter-spacing: .04em; }
         .theme-day .home-study-sync-wordmark { color: #704366; }
-        .phone-study-sync-wordmark { position: absolute; top: 1.2rem; right: 4.25rem; z-index: 30; font-size: .9rem; font-weight: 800; letter-spacing: .035em; color: #dfb6d2; }
+        .phone-study-sync-wordmark { display: none; font-size: .78rem; line-height: 1; font-weight: 800; letter-spacing: .025em; white-space: nowrap; color: #dfb6d2; }
         .theme-day .phone-study-sync-wordmark { color: #704366; }
         @media (max-width: 767px) {
           .home-logout-mobile { display: inline-flex; flex: 0 0 auto; }
           .home-sidebar-footer { display: none; }
-          .phone-study-sync-wordmark { display: block; }
-          .study-home-header > div:first-child { min-width: 0; flex-wrap: nowrap; }
+          .phone-study-sync-wordmark { display: inline-block; flex: 0 0 auto; margin-left: auto; margin-right: .5rem; }
+          .study-home-header { padding-right: 3.5rem; gap: .35rem; }
+          .study-home-header > div:first-child { min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; gap: .5rem; }
         }
         @media (min-width: 1024px) {
           .study-auth-layout {
@@ -1798,8 +1799,6 @@ export default function App() {
       >
         {/* Full-scale study-room image fills the app background */}
         <div className="pixel-room-scene" aria-hidden="true" />
-
-        {screen === "home" && <span className="phone-study-sync-wordmark" aria-label="StudySync">StudySync</span>}
 
         {/* Global Dark/Light Mode Toggle */}
         <button
@@ -2048,6 +2047,8 @@ export default function App() {
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>
+
+              <span className="phone-study-sync-wordmark" aria-label="StudySync">StudySync</span>
 
               <div className="home-sidebar-footer">
                 <span className="home-study-sync-wordmark">StudySync</span>
