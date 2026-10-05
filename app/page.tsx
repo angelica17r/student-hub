@@ -209,6 +209,76 @@ export default function App() {
   const [academicsSubTab, setAcademicsSubTab] = useState<"dashboard" | "tasks" | "pomodoro" | "subjects" | "grades">("dashboard");
   const [darkMode, setDarkMode] = useState(true);
   const [mounted, setMounted] = useState(false);
+  // Onboarding Tour State
+  const [showTour, setShowTour] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
+
+  const TOUR_STORAGE_KEY = "studysync_has_seen_tour";
+
+  const tourSteps = [
+    {
+      title: "Welcome to StudySync! 👋",
+      targetLabel: "App Overview",
+      description: "Here's a quick tour to help you navigate your new study hub effortlessly.",
+      highlightTab: "hub" as const
+    },
+    {
+      title: "Theme Toggle 🌙 / ☀️",
+      targetLabel: "Top Right Corner",
+      description: "Switch seamlessly between pixel moonlight dark mode and warm afternoon light mode anytime.",
+      highlightTab: "hub" as const
+    },
+    {
+      title: "Live Study Chats 💬",
+      targetLabel: "Chat Hub",
+      description: "Create or join study rooms using 6-character codes, invite friends, and share realtime notes.",
+      highlightTab: "chat" as const
+    },
+    {
+      title: "Academics & Focus 📚",
+      targetLabel: "Academics",
+      description: "Track your attendance, manage tasks with due dates, calculate SGPA, and stay locked in with the Pomodoro timer.",
+      highlightTab: "academics" as const
+    },
+    {
+      title: "Account & Profile ⚙️",
+      targetLabel: "Account",
+      description: "Update your unique username, share your 6-digit friend code, or re-run this tour anytime.",
+      highlightTab: "account" as const
+    }
+  ];
+
+  const finishTour = () => {
+    localStorage.setItem(TOUR_STORAGE_KEY, "true");
+    setShowTour(false);
+    setTourStep(0);
+    navigate({ homeTab: "hub" });
+  };
+
+  const handleTourNext = () => {
+    if (tourStep < tourSteps.length - 1) {
+      const nextIndex = tourStep + 1;
+      setTourStep(nextIndex);
+      navigate({ homeTab: tourSteps[nextIndex].highlightTab });
+    } else {
+      finishTour();
+    }
+  };
+
+  const handleTourPrev = () => {
+    if (tourStep > 0) {
+      const prevIndex = tourStep - 1;
+      setTourStep(prevIndex);
+      navigate({ homeTab: tourSteps[prevIndex].highlightTab });
+    }
+  };
+
+  const startTourManually = () => {
+    setTourStep(0);
+    navigate({ homeTab: "hub" });
+    setShowTour(true);
+  };
+
 
   type NavigationSnapshot = {
     screen: "auth" | "profile-setup" | "home";
@@ -357,6 +427,9 @@ export default function App() {
     setPfp(userRecord.pfp);
     setFriendCode(userRecord.friendCode);
     setRememberMe(true);
+    if (!localStorage.getItem(TOUR_STORAGE_KEY)) {
+      setShowTour(true);
+    }
     navigate({ homeTab: "hub", screen: "home" });
   }, [mounted, registeredUsersLoaded, registeredUsers]);
 
@@ -602,6 +675,9 @@ export default function App() {
     setUsername(userRecord.username);
     setPfp(userRecord.pfp);
     setFriendCode(userRecord.friendCode);
+    if (!localStorage.getItem(TOUR_STORAGE_KEY)) {
+      setShowTour(true);
+    }
     if (rememberMe) localStorage.setItem("studysync_remembered_user", email.trim().toLowerCase());
     else localStorage.removeItem("studysync_remembered_user");
     navigate({ homeTab: "hub", screen: "home" });
@@ -641,6 +717,9 @@ export default function App() {
 
     setUsername(cleanUsername);
     setRegisteredUsers(updatedUsers);
+    if (!localStorage.getItem(TOUR_STORAGE_KEY)) {
+      setShowTour(true);
+    }
     if (rememberMe) localStorage.setItem("studysync_remembered_user", email.trim().toLowerCase());
     else localStorage.removeItem("studysync_remembered_user");
     navigate({ homeTab: "hub", screen: "home" });
@@ -2126,6 +2205,73 @@ export default function App() {
                 </div>
               </div>
 
+              {showTour && (
+                <div className={`study-sidebar-tour w-full mt-3 mb-3 p-3.5 rounded-2xl border shadow-lg transition-all animate-in fade-in duration-200 ${
+                  darkMode ? "bg-slate-900/90 border-indigo-500/40 text-white shadow-indigo-950/40" : "bg-white/95 border-indigo-200 text-slate-900 shadow-indigo-100"
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      {tourSteps[tourStep].targetLabel}
+                    </span>
+                    <span className={`text-[10px] font-mono font-medium ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      {tourStep + 1}/{tourSteps.length}
+                    </span>
+                  </div>
+
+                  <h4 className="text-xs font-bold leading-snug mb-1">
+                    {tourSteps[tourStep].title}
+                  </h4>
+                  <p className={`text-[11px] leading-relaxed mb-3 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                    {tourSteps[tourStep].description}
+                  </p>
+
+                  <div className="flex items-center justify-center gap-1 mb-3">
+                    {tourSteps.map((_, index) => (
+                      <span
+                        key={index}
+                        className={`h-1 rounded-full transition-all ${
+                          index === tourStep
+                            ? "w-4 bg-indigo-500"
+                            : darkMode ? "w-1 bg-slate-700" : "w-1 bg-slate-300"
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-800/40">
+                    <button
+                      type="button"
+                      onClick={finishTour}
+                      className={`px-2 py-1 text-[10px] font-semibold rounded-md transition-colors ${
+                        darkMode ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                      }`}
+                    >
+                      Skip
+                    </button>
+
+                    <div className="flex items-center gap-1.5">
+                      {tourStep > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleTourPrev}
+                          className={`px-2 py-1 text-[10px] font-semibold rounded-md border transition-colors ${
+                            darkMode ? "border-slate-700 hover:bg-slate-800 text-slate-300" : "border-slate-300 hover:bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          Back
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleTourNext}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white shadow-sm transition-all"
+                      >
+                        {tourStep === tourSteps.length - 1 ? "Finish" : "Next"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <span className="phone-study-sync-wordmark" aria-label="StudySync">StudySync</span>
 
               <div className="home-sidebar-footer">
@@ -2563,6 +2709,18 @@ export default function App() {
                     <span className="text-xs font-mono text-indigo-400">#{friendCode}</span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={startTourManually}
+                  className={`w-full rounded-xl border px-4 py-3 text-left text-xs font-bold transition-all ${
+                    darkMode
+                      ? "border-indigo-500/30 bg-indigo-950/20 text-indigo-200 hover:bg-indigo-950/50"
+                      : "border-indigo-200 bg-indigo-50/60 text-indigo-700 hover:bg-indigo-100/80"
+                  }`}
+                >
+                  🧭 Replay Onboarding Guide
+                </button>
+
                 <button onClick={() => void deleteProfile()} className="w-full rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-3 text-left text-xs font-bold text-rose-300 hover:bg-rose-950/60">Delete Profile</button>
               </div>
             )}
@@ -2570,7 +2728,8 @@ export default function App() {
           </div>
         )}
 
-      </div>
+
+              </div>
     </div>
   );
 }
