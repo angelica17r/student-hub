@@ -1637,9 +1637,9 @@ export default function App() {
           .study-home-header { padding-right: 3.5rem; gap: .35rem; margin-top: 4.25rem !important; }
           .study-sync-panel > button[aria-label="Toggle Theme"] { top: calc(2.75rem + env(safe-area-inset-top)) !important; }
           .study-home-header > div:first-child { min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; gap: .5rem; }
-          .study-tab-chat .study-home-header > div:first-child > div:nth-child(2),
-          .study-tab-academics .study-home-header > div:first-child > div:nth-child(2),
-          .study-tab-account .study-home-header > div:first-child > div:nth-child(2) { display: none; }
+          .study-tab-chat .study-home-profile-meta,
+          .study-tab-academics .study-home-profile-meta,
+          .study-tab-account .study-home-profile-meta { display: none !important; }
         }
         @media (min-width: 1024px) {
           .study-auth-layout {
@@ -2033,7 +2033,7 @@ export default function App() {
                     <User className={`w-5 h-5 ${darkMode ? "text-slate-400" : "text-slate-600"}`} />
                   )}
                 </div>
-                <div className="min-w-0 flex flex-col items-start gap-1">
+                <div className="study-home-profile-meta min-w-0 flex flex-col items-start gap-1">
                   <h2 className="font-bold text-base leading-tight truncate">
                     {username || "Student"}
                   </h2>
