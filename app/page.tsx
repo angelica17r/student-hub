@@ -1625,6 +1625,18 @@ export default function App() {
           .study-home-header { padding: 2rem; }
           .study-home > div.space-y-4.my-auto { padding: 2rem 3rem; }
         }
+        .home-logout-mobile, .phone-study-sync-wordmark { display: none; }
+        .home-sidebar-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+        .home-study-sync-wordmark { color: #dfb6d2; font-size: 1rem; font-weight: 800; letter-spacing: .04em; }
+        .theme-day .home-study-sync-wordmark { color: #704366; }
+        .phone-study-sync-wordmark { position: absolute; top: 1.2rem; right: 4.25rem; z-index: 30; font-size: .9rem; font-weight: 800; letter-spacing: .035em; color: #dfb6d2; }
+        .theme-day .phone-study-sync-wordmark { color: #704366; }
+        @media (max-width: 767px) {
+          .home-logout-mobile { display: inline-flex; flex: 0 0 auto; }
+          .home-sidebar-footer { display: none; }
+          .phone-study-sync-wordmark { display: block; }
+          .study-home-header > div:first-child { min-width: 0; flex-wrap: nowrap; }
+        }
         @media (min-width: 1024px) {
           .study-auth-layout {
             display: grid;
@@ -1786,6 +1798,8 @@ export default function App() {
       >
         {/* Full-scale study-room image fills the app background */}
         <div className="pixel-room-scene" aria-hidden="true" />
+
+        {screen === "home" && <span className="phone-study-sync-wordmark" aria-label="StudySync">StudySync</span>}
 
         {/* Global Dark/Light Mode Toggle */}
         <button
@@ -2017,23 +2031,35 @@ export default function App() {
                     <User className={`w-5 h-5 ${darkMode ? "text-slate-400" : "text-slate-600"}`} />
                   )}
                 </div>
-                <div>
-                  <h2 className="font-bold text-base leading-tight">
+                <div className="min-w-0">
+                  <h2 className="font-bold text-base leading-tight truncate">
                     {username || "Student"}
                   </h2>
                   <span className={`text-[11px] font-mono ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                     #{friendCode}
                   </span>
                 </div>
+                <button
+                  onClick={handleLogout}
+                  className="home-logout-mobile p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                  title="Sign out"
+                  aria-label="Sign out"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
               </div>
 
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
-                title="Logout"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
+              <div className="home-sidebar-footer">
+                <span className="home-study-sync-wordmark">StudySync</span>
+                <button
+                  onClick={handleLogout}
+                  className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                  title="Sign out"
+                  aria-label="Sign out"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* HUB VIEW: 3 Main Cards/Bubbles */}
